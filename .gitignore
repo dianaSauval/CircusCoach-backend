@@ -1,0 +1,44 @@
+# Node modules
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.*.local
+
+# Runtime files
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Debug
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Uploads (si son temporales, no parte del código fuente)
+uploads/
+
+# Optional npm cache directory
+.npm/
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Build output (si algún día usás tsc o bundlers)
+dist/
+build/
+
+# Other temp
+*.tgz
