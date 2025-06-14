@@ -1,6 +1,6 @@
 const CourseClass = require("../models/CourseClass");
 const Course = require("../models/Course");
-const { deleteFromVimeo, deleteFromVimeoById } = require("../controllers/uploadController");
+const { deleteFromVimeo, deleteFromVimeoById, deleteFromCloudinaryById  } = require("../controllers/uploadController");
 
 const isAdmin = (req) => req.user && req.user.role === "admin";
 
@@ -106,6 +106,27 @@ exports.deleteCourseClass = async (req, res) => {
         }
       }
     }
+
+    // 🔸 Eliminar los PDFs de Cloudinary
+for (const pdf of clase.pdfs) {
+  const publicIds = Object.values(pdf.url)
+    .filter(url => url.includes("cloudinary.com"))
+    .map(url => {
+      // extrae el public_id del URL, si lo guardaste en el esquema sería aún mejor
+      const match = url.match(/\/upload\/(?:v\d+\/)?PDFs\/(.+)\.pdf/);
+      return match ? `PDFs/${match[1]}` : null;
+    })
+    .filter(Boolean);
+
+  for (const publicId of publicIds) {
+    try {
+      await deleteFromCloudinaryById(publicId);
+    } catch (err) {
+      console.warn(`⚠️ Error al eliminar PDF ${publicId}:`, err.message);
+    }
+  }
+}
+
 
     // 🔸 Eliminar la clase
     await CourseClass.findByIdAndDelete(id);

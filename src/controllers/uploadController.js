@@ -1,10 +1,22 @@
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
+const multer = require("multer");
 
 const VIMEO_TOKEN = process.env.VIMEO_TOKEN;
 
-// ✅ Subir video y esperar procesamiento
+// 🔹 Multer para video
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) =>
+    cb(null, Date.now() + "-" + file.originalname),
+});
+const upload = multer({ storage });
+
+// Middleware para subir video
+exports.uploadVideoMiddleware = upload.single("file");
+
+// ✅ Subir video y devolver link
 exports.uploadVideo = async (req, res) => {
   const file = req.file;
   const { title, description } = req.body;
@@ -14,7 +26,7 @@ exports.uploadVideo = async (req, res) => {
   }
 
   try {
-    // Paso 1: Crear video en Vimeo
+    // Paso 1: Crear el recurso en Vimeo
     const stats = fs.statSync(file.path);
     const size = stats.size;
 
@@ -36,7 +48,7 @@ exports.uploadVideo = async (req, res) => {
       }
     );
 
-    const videoUri = createRes.data.uri; // ejemplo: /videos/123456789
+    const videoUri = createRes.data.uri; // /videos/123456
     const uploadLink = createRes.data.upload.upload_link;
 
     // Paso 2: Subir el archivo binario
@@ -51,24 +63,17 @@ exports.uploadVideo = async (req, res) => {
       },
     });
 
-    // ✅ NO ESPERAR procesamiento
-    // 🔁 En lugar de esperar a que esté disponible:
+    fs.unlinkSync(file.path); // limpia temporal
+
     const finalVideoUrl = `https://vimeo.com${videoUri.replace("/videos", "")}`;
-
-    // Borrar archivo temporal
-    fs.unlinkSync(file.path);
-
-    // ✅ Devolver link inmediatamente
     res.json({ url: finalVideoUrl });
   } catch (err) {
-    console.error(
-      "❌ Error al subir video a Vimeo:",
-      err.response?.data || err.message
-    );
+    console.error("❌ Error al subir video a Vimeo:", err.response?.data || err.message);
     res.status(500).json({ error: "Error al subir video" });
   }
 };
 
+// ✅ Eliminar video desde Vimeo (por ID)
 exports.deleteFromVimeoById = async (videoId) => {
   try {
     const videoUri = `/videos/${videoId}`;
@@ -84,7 +89,7 @@ exports.deleteFromVimeoById = async (videoId) => {
   }
 };
 
-// ✅ Eliminar video
+// ✅ Ruta para eliminar video desde el cliente (por URL)
 exports.deleteFromVimeo = async (req, res) => {
   const videoUrl = typeof req.body === "string" ? req.body : req.body.videoUrl;
   console.log("🔍 URL recibida:", videoUrl);
@@ -108,7 +113,7 @@ exports.deleteFromVimeo = async (req, res) => {
   }
 };
 
-
+// ✅ Consultar estado de un video en Vimeo
 exports.getVimeoStatus = async (req, res) => {
   const videoId = req.params.videoId;
 
