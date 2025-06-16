@@ -1,12 +1,21 @@
 const express = require("express");
 const router = express.Router();
-const { uploadPdf, deleteArchivo } = require("../controllers/cloudinaryController");
+
+const {
+  uploadPdfPublico,
+  uploadPdfPrivado,
+  deleteArchivo,
+} = require("../controllers/cloudinaryController");
+
 const uploadPdfMiddleware = require("../middlewares/pdfMulter");
 
-// 📤 Subida de PDF
-router.post("/upload-pdf", uploadPdfMiddleware, uploadPdf);
+// 📤 Subida de PDF público (para cursos)
+router.post("/upload-pdf-publico", uploadPdfMiddleware, uploadPdfPublico);
 
-// 🗑 Eliminación (general, sirve para cualquier tipo si se le pasa el tipo)
+// 📤 Subida de PDF privado (para clases)
+router.post("/upload-pdf-privado", uploadPdfMiddleware, uploadPdfPrivado);
+
+// 🗑 Eliminación (general)
 router.delete("/delete", deleteArchivo);
 
 module.exports = router;

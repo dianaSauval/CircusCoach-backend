@@ -22,6 +22,11 @@ const courseSchema = new mongoose.Schema({
     en: { type: String },
     fr: { type: String },
   },
+  public_id_pdf: {
+  es: { type: String },
+  en: { type: String },
+  fr: { type: String },
+},
   video: {
     es: { type: String },
     en: { type: String },

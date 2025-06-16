@@ -1,6 +1,10 @@
 const Course = require("../models/Course");
 const CourseClass = require("../models/CourseClass");
-const { deleteFromVimeo, deleteFromVimeoById } = require("../controllers/uploadController");
+const {
+  deleteFromVimeo,
+  deleteFromVimeoById,
+} = require("../controllers/uploadController");
+const { deleteArchivoCloudinary } = require("./cloudinaryController");
 
 const isAdmin = (req) => req.user && req.user.role === "admin";
 
@@ -48,24 +52,22 @@ exports.getCourseById = async (req, res) => {
       return res.status(404).json({ error: "Curso no encontrado" });
     }
 
-    // Verificar visibilidad en el idioma
     if (!course.visible?.[lang]) {
       return res
         .status(403)
         .json({ error: "Curso no disponible en este idioma" });
     }
 
-    // Filtrar clases visibles por idioma
     const clasesFiltradas = course.classes.filter((cl) => cl.visible?.[lang]);
 
-    // ✅ Devolvemos todo el contenido multilenguaje, no solo el traducido
     res.json({
       _id: course._id,
-      title: course.title, // ← objeto completo
+      title: course.title,
       description: course.description,
       image: course.image,
       video: course.video,
       pdf: course.pdf,
+      public_id_pdf: course.public_id_pdf, // ⬆️ Incluido
       visible: course.visible,
       price: course.price,
       classes: clasesFiltradas,
@@ -81,7 +83,8 @@ exports.createCourse = async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "No autorizado" });
 
   try {
-    const { title, description, price, image, pdf, video } = req.body;
+    const { title, description, price, image, pdf, video, public_id_pdf } =
+      req.body;
 
     if (!title?.es || !description?.es || !price) {
       return res.status(400).json({ error: "Faltan campos obligatorios" });
@@ -93,6 +96,7 @@ exports.createCourse = async (req, res) => {
       price,
       image,
       pdf,
+      public_id_pdf, // ⬆️ Incluido
       video,
       classes: [],
     });
@@ -161,7 +165,7 @@ exports.toggleCourseVisibilityByLanguage = async (req, res) => {
 // 🔹 Eliminar un curso y sus clases (admin)
 exports.deleteCourse = async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "No autorizado" });
-
+console.log("🟠 Iniciando eliminación de curso...");
   try {
     const { id } = req.params;
     const course = await Course.findById(id).populate("classes");
@@ -178,12 +182,41 @@ exports.deleteCourse = async (req, res) => {
           if (url && url.includes("vimeo.com")) {
             const videoId = url.split("/").pop();
             try {
-              await deleteFromVimeoById(videoId); // ✅ AHORA sí está bien
+              await deleteFromVimeoById(videoId);
             } catch (err) {
               console.warn(`Error al eliminar video ${videoId}:`, err.message);
             }
           }
         }
+      }
+
+      // 🔹 Eliminar los PDFs de la clase
+      // 🔹 Eliminar los PDFs del curso
+      for (const lang of ["es", "en", "fr"]) {
+        const publicId = course.public_id_pdf?.[lang];
+
+        if (publicId) {
+          console.log(
+            `🗑 Eliminando PDF de curso para idioma ${lang}: ${publicId}`
+          );
+
+          try {
+            await deleteArchivoCloudinary(publicId, "raw");
+            console.log(`✅ PDF eliminado: ${publicId}`);
+          } catch (err) {
+            console.error(`❌ Error al eliminar PDF (${lang}):`, err.message);
+          }
+        } else {
+          console.log(`⚠️ No hay PDF para eliminar en idioma ${lang}`);
+        }
+      }
+    }
+
+    // 🔹 Eliminar los PDFs del curso
+    for (const lang of ["es", "en", "fr"]) {
+      const publicId = course.public_id_pdf?.[lang];
+      if (publicId) {
+        await deleteArchivoCloudinary(publicId, "raw");
       }
     }
 
@@ -195,7 +228,9 @@ exports.deleteCourse = async (req, res) => {
     // 🔹 Eliminar el curso
     await Course.findByIdAndDelete(id);
 
-    res.json({ message: "Curso, clases y videos eliminados correctamente" });
+    res.json({
+      message: "Curso, clases, videos y PDFs eliminados correctamente",
+    });
   } catch (error) {
     console.error("Error al eliminar curso:", error);
     res.status(500).json({ error: "Error en el servidor" });
