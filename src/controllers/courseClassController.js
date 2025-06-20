@@ -1,6 +1,6 @@
 const CourseClass = require("../models/CourseClass");
 const Course = require("../models/Course");
-const { deleteFromVimeo, deleteFromVimeoById, deleteFromCloudinaryById  } = require("../controllers/uploadController");
+const { deleteArchivoCloudinary } = require("./cloudinaryController");
 
 const isAdmin = (req) => req.user && req.user.role === "admin";
 
@@ -92,41 +92,31 @@ exports.deleteCourseClass = async (req, res) => {
 
     if (!clase) return res.status(404).json({ error: "Clase no encontrada" });
 
-    // 🔸 Eliminar los videos de Vimeo
+    // 🔸 Eliminar los videos de Vimeo (usando función reutilizable)
+    const { eliminarVideosDeObjeto } = require("./uploadController");
+
     for (const video of clase.videos) {
-      for (const lang of ["es", "en", "fr"]) {
-        const url = video.url?.[lang];
-        if (url && url.includes("vimeo.com")) {
-          const videoId = url.split("/").pop();
-          try {
-            await deleteFromVimeoById(videoId); // ✅ Esto ahora sí va bien
-          } catch (err) {
-            console.warn(`⚠️ Error al eliminar video ${videoId}:`, err.message);
-          }
-        }
-      }
+      await eliminarVideosDeObjeto(video.url);
     }
 
     // 🔸 Eliminar los PDFs de Cloudinary
-for (const pdf of clase.pdfs) {
-  const publicIds = Object.values(pdf.url)
-    .filter(url => url.includes("cloudinary.com"))
-    .map(url => {
-      // extrae el public_id del URL, si lo guardaste en el esquema sería aún mejor
-      const match = url.match(/\/upload\/(?:v\d+\/)?PDFs\/(.+)\.pdf/);
-      return match ? `PDFs/${match[1]}` : null;
-    })
-    .filter(Boolean);
+    for (const pdf of clase.pdfs) {
+      const publicIds = Object.values(pdf.url)
+        .filter((url) => url.includes("cloudinary.com"))
+        .map((url) => {
+          const match = url.match(/\/upload\/(?:v\d+\/)?PDFs\/(.+)\.pdf/);
+          return match ? `PDFs/${match[1]}` : null;
+        })
+        .filter(Boolean);
 
-  for (const publicId of publicIds) {
-    try {
-      await deleteFromCloudinaryById(publicId);
-    } catch (err) {
-      console.warn(`⚠️ Error al eliminar PDF ${publicId}:`, err.message);
+      for (const publicId of publicIds) {
+        try {
+          await deleteArchivoCloudinary(publicId, "raw");
+        } catch (err) {
+          console.warn(`⚠️ Error al eliminar PDF ${publicId}:`, err.message);
+        }
+      }
     }
-  }
-}
-
 
     // 🔸 Eliminar la clase
     await CourseClass.findByIdAndDelete(id);
@@ -136,12 +126,13 @@ for (const pdf of clase.pdfs) {
       $pull: { classes: clase._id },
     });
 
-    res.json({ message: "Clase y videos eliminados correctamente" });
+    res.json({ message: "Clase y recursos eliminados correctamente" });
   } catch (error) {
     console.error("Error eliminando clase:", error);
     res.status(500).json({ error: "Error en el servidor" });
   }
 };
+
 
 // 🔹 Cambiar visibilidad por idioma (solo admin)
 exports.toggleCourseClassVisibilityByLanguage = async (req, res) => {

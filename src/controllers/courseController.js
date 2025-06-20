@@ -1,10 +1,9 @@
 const Course = require("../models/Course");
 const CourseClass = require("../models/CourseClass");
 const {
-  deleteFromVimeo,
-  deleteFromVimeoById,
-} = require("../controllers/uploadController");
-const { deleteArchivoCloudinary } = require("./cloudinaryController");
+  deleteArchivoCloudinary,
+  deleteImagenesCurso,
+} = require("./cloudinaryController");
 
 const isAdmin = (req) => req.user && req.user.role === "admin";
 
@@ -165,7 +164,8 @@ exports.toggleCourseVisibilityByLanguage = async (req, res) => {
 // 🔹 Eliminar un curso y sus clases (admin)
 exports.deleteCourse = async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "No autorizado" });
-console.log("🟠 Iniciando eliminación de curso...");
+  console.log("🟠 Iniciando eliminación de curso...");
+
   try {
     const { id } = req.params;
     const course = await Course.findById(id).populate("classes");
@@ -174,49 +174,51 @@ console.log("🟠 Iniciando eliminación de curso...");
       return res.status(404).json({ error: "Curso no encontrado" });
     }
 
-    // 🔹 Eliminar todos los videos de las clases asociadas
-    for (const clase of course.classes) {
-      for (const video of clase.videos) {
-        for (const lang of ["es", "en", "fr"]) {
-          const url = video.url?.[lang];
-          if (url && url.includes("vimeo.com")) {
-            const videoId = url.split("/").pop();
-            try {
-              await deleteFromVimeoById(videoId);
-            } catch (err) {
-              console.warn(`Error al eliminar video ${videoId}:`, err.message);
-            }
-          }
-        }
-      }
+    // 🔹 Eliminar videos del curso (por idioma)
+    const { eliminarVideosDeObjeto } = require("./uploadController");
+    await eliminarVideosDeObjeto(course.video);
 
-      // 🔹 Eliminar los PDFs de la clase
-      // 🔹 Eliminar los PDFs del curso
-      for (const lang of ["es", "en", "fr"]) {
-        const publicId = course.public_id_pdf?.[lang];
-
-        if (publicId) {
-          console.log(
-            `🗑 Eliminando PDF de curso para idioma ${lang}: ${publicId}`
-          );
-
-          try {
-            await deleteArchivoCloudinary(publicId, "raw");
-            console.log(`✅ PDF eliminado: ${publicId}`);
-          } catch (err) {
-            console.error(`❌ Error al eliminar PDF (${lang}):`, err.message);
-          }
-        } else {
-          console.log(`⚠️ No hay PDF para eliminar en idioma ${lang}`);
-        }
-      }
-    }
-
-    // 🔹 Eliminar los PDFs del curso
+    // 🔹 Eliminar PDFs del curso
     for (const lang of ["es", "en", "fr"]) {
       const publicId = course.public_id_pdf?.[lang];
       if (publicId) {
-        await deleteArchivoCloudinary(publicId, "raw");
+        try {
+          await deleteArchivoCloudinary(publicId, "raw");
+          console.log(`✅ PDF eliminado: ${publicId}`);
+        } catch (err) {
+          console.error(`❌ Error al eliminar PDF (${lang}):`, err.message);
+        }
+      } else {
+        console.log(`⚠️ No hay PDF para eliminar en idioma ${lang}`);
+      }
+    }
+
+    // 🔹 Eliminar imágenes del curso
+    await deleteImagenesCurso(course.image);
+
+    // 🔹 Eliminar todos los videos y PDFs de las clases asociadas
+    for (const clase of course.classes) {
+      for (const video of clase.videos) {
+        await eliminarVideosDeObjeto(video.url);
+      }
+
+      // 🔹 Eliminar los PDFs de cada clase
+      for (const pdf of clase.pdfs) {
+        const publicIds = Object.values(pdf.url)
+          .filter((url) => url.includes("cloudinary.com"))
+          .map((url) => {
+            const match = url.match(/\/upload\/(?:v\d+\/)?PDFs\/(.+)\.pdf/);
+            return match ? `PDFs/${match[1]}` : null;
+          })
+          .filter(Boolean);
+
+        for (const publicId of publicIds) {
+          try {
+            await deleteArchivoCloudinary(publicId, "raw");
+          } catch (err) {
+            console.warn(`⚠️ Error al eliminar PDF ${publicId}:`, err.message);
+          }
+        }
       }
     }
 

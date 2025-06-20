@@ -8,16 +8,15 @@ const VIMEO_TOKEN = process.env.VIMEO_TOKEN;
 // 🔹 Multer para video
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) =>
-    cb(null, Date.now() + "-" + file.originalname),
+  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
 const upload = multer({ storage });
 
-// Middleware para subir video
+// Middleware general
 exports.uploadVideoMiddleware = upload.single("file");
 
-// ✅ Subir video y devolver link
-exports.uploadVideo = async (req, res) => {
+// 🔹 Función base reutilizable
+exports.uploadVideoConPrivacidad = async (req, res, privacy = "unlisted") => {
   const file = req.file;
   const { title, description } = req.body;
 
@@ -26,19 +25,19 @@ exports.uploadVideo = async (req, res) => {
   }
 
   try {
-    // Paso 1: Crear el recurso en Vimeo
     const stats = fs.statSync(file.path);
     const size = stats.size;
 
+    // Crear recurso en Vimeo
     const createRes = await axios.post(
       "https://api.vimeo.com/me/videos",
       {
-        upload: {
-          approach: "tus",
-          size,
-        },
+        upload: { approach: "tus", size },
         name: title,
         description,
+        privacy: {
+          view: privacy, // 👈 "anybody" | "disable" | "unlisted"
+        },
       },
       {
         headers: {
@@ -51,7 +50,7 @@ exports.uploadVideo = async (req, res) => {
     const videoUri = createRes.data.uri; // /videos/123456
     const uploadLink = createRes.data.upload.upload_link;
 
-    // Paso 2: Subir el archivo binario
+    // Subir archivo binario
     const buffer = fs.readFileSync(file.path);
     await axios.patch(uploadLink, buffer, {
       headers: {
@@ -63,17 +62,27 @@ exports.uploadVideo = async (req, res) => {
       },
     });
 
-    fs.unlinkSync(file.path); // limpia temporal
+    fs.unlinkSync(file.path); // limpieza
 
     const finalVideoUrl = `https://vimeo.com${videoUri.replace("/videos", "")}`;
     res.json({ url: finalVideoUrl });
   } catch (err) {
-    console.error("❌ Error al subir video a Vimeo:", err.response?.data || err.message);
+    console.error("❌ Error al subir video:", err.response?.data || err.message);
     res.status(500).json({ error: "Error al subir video" });
   }
 };
 
-// ✅ Eliminar video desde Vimeo (por ID)
+// 🔸 Subida de video PROMOCIONAL (público)
+exports.uploadPromotionalVideo = async (req, res) => {
+  return exports.uploadVideoConPrivacidad(req, res, "anybody");
+};
+
+// 🔸 Subida de video PRIVADO (clase, solo embebido)
+exports.uploadPrivateVideo = async (req, res) => {
+  return exports.uploadVideoConPrivacidad(req, res, "disable");
+};
+
+// 🔹 Eliminar video por ID
 exports.deleteFromVimeoById = async (videoId) => {
   try {
     const videoUri = `/videos/${videoId}`;
@@ -89,7 +98,7 @@ exports.deleteFromVimeoById = async (videoId) => {
   }
 };
 
-// ✅ Ruta para eliminar video desde el cliente (por URL)
+// 🔹 Eliminar video desde URL
 exports.deleteFromVimeo = async (req, res) => {
   const videoUrl = typeof req.body === "string" ? req.body : req.body.videoUrl;
   console.log("🔍 URL recibida:", videoUrl);
@@ -113,7 +122,7 @@ exports.deleteFromVimeo = async (req, res) => {
   }
 };
 
-// ✅ Consultar estado de un video en Vimeo
+// 🔹 Consultar estado de un video
 exports.getVimeoStatus = async (req, res) => {
   const videoId = req.params.videoId;
 
@@ -124,10 +133,26 @@ exports.getVimeoStatus = async (req, res) => {
       },
     });
 
-    const status = response.data.status; // 'available', 'uploading', 'transcoding'
+    const status = response.data.status; // 'available', etc.
     res.json({ status });
   } catch (error) {
     console.error("Error consultando estado del video:", error.response?.data || error.message);
     res.status(500).json({ error: "Error consultando estado del video" });
+  }
+};
+
+// 🔹 Eliminar todos los videos de un objeto con URLs por idioma
+exports.eliminarVideosDeObjeto = async (objetoConUrls) => {
+  for (const lang of ["es", "en", "fr"]) {
+    const url = objetoConUrls?.[lang];
+    if (url && url.includes("vimeo.com")) {
+      const videoId = url.split("/").pop();
+      try {
+        await exports.deleteFromVimeoById(videoId);
+        console.log(`✅ Video eliminado: ${videoId}`);
+      } catch (err) {
+        console.warn(`⚠️ Error al eliminar video ${videoId}:`, err.message);
+      }
+    }
   }
 };
