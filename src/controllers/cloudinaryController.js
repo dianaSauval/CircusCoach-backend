@@ -65,7 +65,7 @@ exports.uploadPdfPublico = async (req, res) => {
 exports.uploadPdfPrivado = async (req, res) => {
   console.log("📥 Subiendo PDF privado...");
   const file = req.file;
-  const publicId = req.body.public_id;
+  const publicId = req.body.public_id; // 👈 Esperamos algo como "clase_1_probando"
 
   if (!file) {
     return res.status(400).json({ error: "Archivo PDF requerido" });
@@ -74,21 +74,25 @@ exports.uploadPdfPrivado = async (req, res) => {
   try {
     const result = await cloudinary.uploader.upload(file.path, {
       resource_type: "raw",
-      folder: "PDFsPrivados",
-      public_id: `PDFsPrivados/${publicId}`, // ✅ Se guarda con ese nombre
+      folder: "PDFsPrivados",      // 👈 Solo especificamos la carpeta aquí
+      public_id: publicId,         // ✅ El nombre final será: PDFsPrivados/clase_1_probando
       use_filename: true,
       unique_filename: false,
       overwrite: true,
     });
 
-    fs.unlinkSync(file.path);
+    fs.unlinkSync(file.path); // ✅ Borra el archivo temporal del servidor
     console.log("✅ Subida privada exitosa:", result.secure_url);
+
+    // Devolvemos la URL y el public_id generado por Cloudinary
     res.json({ url: result.secure_url, public_id: result.public_id });
+
   } catch (error) {
     console.error("❌ Error al subir PDF privado:", error.message);
     res.status(500).json({ error: "Error al subir PDF privado" });
   }
 };
+
 
 
 // 🗑 Eliminar archivo desde el panel
@@ -111,10 +115,24 @@ exports.deleteArchivo = async (req, res) => {
 
 // 🧩 Para usar desde otros controladores (reutilizable)
 exports.deleteArchivoCloudinary = async (public_id, resource_type = "raw") => {
+  if (!public_id) {
+    console.warn("⚠️ No se proporcionó public_id");
+    return;
+  }
+
   try {
     console.log(`🔄 Llamando a Cloudinary para eliminar: ${public_id}`);
-    await cloudinary.uploader.destroy(public_id, { resource_type });
-    console.log(`✅ Archivo eliminado de Cloudinary: ${public_id}`);
+
+    const result = await cloudinary.uploader.destroy(public_id, { resource_type });
+    console.log("📤 Respuesta de Cloudinary:", result);
+
+    if (result.result !== "ok") {
+      console.warn(`⚠️ Cloudinary no eliminó el archivo: ${public_id} (resultado: ${result.result})`);
+    } else {
+      console.log(`✅ Archivo eliminado de Cloudinary: ${public_id}`);
+    }
+
+    return result;
   } catch (err) {
     console.error("❌ Error al eliminar archivo de Cloudinary:", err.message);
   }

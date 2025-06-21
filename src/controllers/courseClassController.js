@@ -92,26 +92,52 @@ exports.deleteCourseClass = async (req, res) => {
 
     if (!clase) return res.status(404).json({ error: "Clase no encontrada" });
 
+    console.log(`🧹 Eliminando clase con ID: ${id}`);
+
     // 🔸 Eliminar los videos de Vimeo (usando función reutilizable)
     const { eliminarVideosDeObjeto } = require("./uploadController");
 
     for (const video of clase.videos) {
+      console.log(`🎞 Eliminando video...`, video.url);
       await eliminarVideosDeObjeto(video.url);
     }
 
     // 🔸 Eliminar los PDFs de Cloudinary
     for (const pdf of clase.pdfs) {
-      const publicIds = Object.values(pdf.url)
-        .filter((url) => url.includes("cloudinary.com"))
+      console.log("📚 Analizando PDF:", pdf);
+
+      const urls = Object.values(pdf.url).filter((url) =>
+        url.includes("cloudinary.com")
+      );
+
+      console.log("🔗 URLs detectadas en PDF:", urls);
+
+      const publicIds = urls
         .map((url) => {
-          const match = url.match(/\/upload\/(?:v\d+\/)?PDFs\/(.+)\.pdf/);
-          return match ? `PDFs/${match[1]}` : null;
+          try {
+            const parts = new URL(url).pathname.split("/");
+            const folderIndex = parts.findIndex(
+              (part) => part === "PDFsPrivados" || part === "PDFsPublicos"
+            );
+            if (folderIndex !== -1 && parts[folderIndex + 1]) {
+              const folder = parts[folderIndex];
+              const filenameWithExt = parts[folderIndex + 1];
+              return `${folder}/${filenameWithExt}`;
+            }
+          } catch (e) {
+            console.warn("⚠️ No se pudo analizar la URL del PDF:", url);
+            return null;
+          }
         })
         .filter(Boolean);
 
+      console.log("📁 IDs públicos a eliminar:", publicIds);
+
       for (const publicId of publicIds) {
         try {
+          console.log(`⛔ Eliminando PDF desde Cloudinary: ${publicId}`);
           await deleteArchivoCloudinary(publicId, "raw");
+          console.log(`✅ PDF eliminado correctamente: ${publicId}`);
         } catch (err) {
           console.warn(`⚠️ Error al eliminar PDF ${publicId}:`, err.message);
         }
@@ -126,13 +152,13 @@ exports.deleteCourseClass = async (req, res) => {
       $pull: { classes: clase._id },
     });
 
+    console.log("🧼 Clase y recursos eliminados correctamente");
     res.json({ message: "Clase y recursos eliminados correctamente" });
   } catch (error) {
-    console.error("Error eliminando clase:", error);
+    console.error("💥 Error eliminando clase:", error);
     res.status(500).json({ error: "Error en el servidor" });
   }
 };
-
 
 // 🔹 Cambiar visibilidad por idioma (solo admin)
 exports.toggleCourseClassVisibilityByLanguage = async (req, res) => {
