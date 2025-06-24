@@ -207,8 +207,11 @@ exports.deleteCourse = async (req, res) => {
         const publicIds = Object.values(pdf.url)
           .filter((url) => url.includes("cloudinary.com"))
           .map((url) => {
-            const match = url.match(/\/upload\/(?:v\d+\/)?PDFs\/(.+)\.pdf/);
-            return match ? `PDFs/${match[1]}` : null;
+            const match = url.match(
+              /\/upload\/(?:v\d+\/)?PDFsPrivados\/(.+)\.pdf/
+            );
+            return match ? `PDFsPrivados/${match[1]}.pdf` : null;
+
           })
           .filter(Boolean);
 
