@@ -2,6 +2,10 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
+const Class = require("../models/Class");
+const User = require("../models/User");
+const Module = require("../models/Module");
+const Formation = require("../models/Formation");
 
 const VIMEO_TOKEN = process.env.VIMEO_TOKEN;
 
@@ -16,7 +20,12 @@ const upload = multer({ storage });
 exports.uploadVideoMiddleware = upload.single("file");
 
 // 🔹 Función base reutilizable
-exports.uploadVideoConPrivacidad = async (req, res, privacy = "unlisted") => {
+exports.uploadVideoConPrivacidad = async (
+  req,
+  res,
+  privacy = "unlisted",
+  embed = "whitelist"
+) => {
   const file = req.file;
   const { title, description } = req.body;
 
@@ -28,17 +37,47 @@ exports.uploadVideoConPrivacidad = async (req, res, privacy = "unlisted") => {
     const stats = fs.statSync(file.path);
     const size = stats.size;
 
-    // Crear recurso en Vimeo
-    const createRes = await axios.post(
-      "https://api.vimeo.com/me/videos",
-      {
-        upload: { approach: "tus", size },
-        name: title,
-        description,
-        privacy: {
-          view: privacy, // 👈 "anybody" | "disable" | "unlisted"
+    // Whitelist solo si se indica
+    const domainWhitelist =
+      embed === "whitelist"
+        ? [
+            "localhost:5173",
+            "127.0.0.1:5173",
+            "mycircuscoach.com",
+            "www.mycircuscoach.com",
+          ]
+        : [];
+
+    // 🎛 Configuración para subir video
+    const vimeoPayload = {
+      upload: { approach: "tus", size },
+      name: title,
+      description,
+      privacy: {
+        view: privacy, // "anybody" o "unlisted"
+        embed: embed, // "public" o "whitelist"
+        download: false,
+        add: false,
+      },
+      embed: {
+        buttons: {
+          like: false,
+          watchlater: false,
+          share: false,
+          embed: false,
         },
       },
+      ...(domainWhitelist.length > 0 && { embed_domains: domainWhitelist }),
+    };
+
+    // 🔍 Log para ver la config exacta
+    console.log("🎥 Subiendo video con configuración:");
+    console.log(JSON.stringify(vimeoPayload, null, 2));
+
+    // 📡 1. Crear video en Vimeo
+    const createRes = await axios.post(
+      "https://api.vimeo.com/me/videos",
+      vimeoPayload,
       {
         headers: {
           Authorization: `Bearer ${VIMEO_TOKEN}`,
@@ -47,10 +86,10 @@ exports.uploadVideoConPrivacidad = async (req, res, privacy = "unlisted") => {
       }
     );
 
-    const videoUri = createRes.data.uri; // /videos/123456
+    const videoUri = createRes.data.uri;
     const uploadLink = createRes.data.upload.upload_link;
 
-    // Subir archivo binario
+    // ⬆️ 2. Subir el archivo binario al link de upload
     const buffer = fs.readFileSync(file.path);
     await axios.patch(uploadLink, buffer, {
       headers: {
@@ -62,24 +101,49 @@ exports.uploadVideoConPrivacidad = async (req, res, privacy = "unlisted") => {
       },
     });
 
-    fs.unlinkSync(file.path); // limpieza
+    fs.unlinkSync(file.path); // 🧹 Limpieza
 
+    // 🔧 3. Forzar configuración final (por si no aplicó bien al crear)
+    await axios.patch(
+      `https://api.vimeo.com${videoUri}`,
+      {
+        privacy: {
+          view: privacy,
+          embed: embed,
+          download: false,
+          add: false,
+        },
+        ...(domainWhitelist.length > 0 && { embed_domains: domainWhitelist }),
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${VIMEO_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    // ✅ 4. Respuesta final con URL del video
     const finalVideoUrl = `https://vimeo.com${videoUri.replace("/videos", "")}`;
+    console.log(`✅ Video subido correctamente: ${finalVideoUrl}`);
     res.json({ url: finalVideoUrl });
   } catch (err) {
-    console.error("❌ Error al subir video:", err.response?.data || err.message);
+    console.error(
+      "❌ Error al subir video:",
+      err.response?.data || err.message
+    );
     res.status(500).json({ error: "Error al subir video" });
   }
 };
 
-// 🔸 Subida de video PROMOCIONAL (público)
+// 🔸 Subida de video PROMOCIONAL (público, visible en Vimeo y embebible en cualquier sitio)
 exports.uploadPromotionalVideo = async (req, res) => {
-  return exports.uploadVideoConPrivacidad(req, res, "anybody");
+  return exports.uploadVideoConPrivacidad(req, res, "anybody", "public");
 };
 
-// 🔸 Subida de video PRIVADO (clase, solo embebido)
+// 🔸 Subida de video PRIVADO (solo embebido en tu web, no visible en Vimeo)
 exports.uploadPrivateVideo = async (req, res) => {
-  return exports.uploadVideoConPrivacidad(req, res, "disable");
+  return exports.uploadVideoConPrivacidad(req, res, "unlisted", "whitelist");
 };
 
 // 🔹 Eliminar video por ID
@@ -93,7 +157,10 @@ exports.deleteFromVimeoById = async (videoId) => {
     });
     console.log(`✅ Video ${videoId} eliminado correctamente`);
   } catch (err) {
-    console.error(`❌ Error al eliminar video ${videoId}:`, err.response?.data || err.message);
+    console.error(
+      `❌ Error al eliminar video ${videoId}:`,
+      err.response?.data || err.message
+    );
     throw err;
   }
 };
@@ -111,7 +178,9 @@ exports.deleteFromVimeo = async (req, res) => {
   const videoId = match?.[1];
 
   if (!videoId) {
-    return res.status(400).json({ error: "No se pudo obtener el ID del video" });
+    return res
+      .status(400)
+      .json({ error: "No se pudo obtener el ID del video" });
   }
 
   try {
@@ -127,16 +196,22 @@ exports.getVimeoStatus = async (req, res) => {
   const videoId = req.params.videoId;
 
   try {
-    const response = await axios.get(`https://api.vimeo.com/videos/${videoId}`, {
-      headers: {
-        Authorization: `Bearer ${VIMEO_TOKEN}`,
-      },
-    });
+    const response = await axios.get(
+      `https://api.vimeo.com/videos/${videoId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${VIMEO_TOKEN}`,
+        },
+      }
+    );
 
     const status = response.data.status; // 'available', etc.
     res.json({ status });
   } catch (error) {
-    console.error("Error consultando estado del video:", error.response?.data || error.message);
+    console.error(
+      "Error consultando estado del video:",
+      error.response?.data || error.message
+    );
     res.status(500).json({ error: "Error consultando estado del video" });
   }
 };
@@ -154,5 +229,52 @@ exports.eliminarVideosDeObjeto = async (objetoConUrls) => {
         console.warn(`⚠️ Error al eliminar video ${videoId}:`, err.message);
       }
     }
+  }
+};
+
+exports.obtenerVideoPrivado = async (req, res) => {
+  const userId = req.user.id;
+  const { classId, videoIndex, lang } = req.params;
+
+  try {
+    const clase = await Class.findById(classId).populate("module");
+    if (!clase) return res.status(404).json({ error: "Clase no encontrada" });
+
+    const modulo = clase.module;
+    if (!modulo) return res.status(404).json({ error: "Módulo no encontrado" });
+
+    const formationId = modulo.formation;
+    if (!formationId)
+      return res.status(404).json({ error: "Formación no encontrada" });
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(403).json({ error: "Usuario no encontrado" });
+
+    const videoData = clase.videos?.[videoIndex];
+    const videoUrl = videoData?.url?.[lang];
+
+    if (!videoUrl) {
+      return res
+        .status(404)
+        .json({ error: "Video no encontrado en ese idioma o índice" });
+    }
+
+    // Admins pueden acceder directamente
+    if (user.role === "admin") {
+      return res.json({ url: videoUrl });
+    }
+
+    const haComprado = user.formacionesCompradas.some((id) =>
+      id.equals(formationId)
+    );
+
+    if (!haComprado) {
+      return res.status(403).json({ error: "No compraste esta formación" });
+    }
+
+    return res.json({ url: videoUrl });
+  } catch (err) {
+    console.error("❌ Error al obtener video privado:", err.message);
+    res.status(500).json({ error: "Error en el servidor" });
   }
 };

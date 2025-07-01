@@ -1,12 +1,16 @@
 const cloudinary = require("../config/cloudinary");
 const fs = require("fs");
+const Class = require("../models/Class");
+const User = require("../models/User");
+const Module = require("../models/Module");
+const Formation = require("../models/Formation");
+
 
 const multer = require("multer");
 
 const imageStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) =>
-    cb(null, Date.now() + "-" + file.originalname),
+  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
 
 exports.uploadImagenMiddleware = multer({
@@ -19,8 +23,6 @@ exports.uploadImagenMiddleware = multer({
   },
 }).single("file");
 
-
-
 // 🔹 Subida reutilizable con carpeta visible
 const subirPdfCloudinary = async (file, carpeta, nombre = null) => {
   // Si hay un nombre personalizado, lo usamos
@@ -31,13 +33,12 @@ const subirPdfCloudinary = async (file, carpeta, nombre = null) => {
   return await cloudinary.uploader.upload(file.path, {
     resource_type: "raw",
     folder: carpeta, // ✅ Asegura que esté en PDFsPublicos
-    public_id,        // ✅ Asegura que tenga el nombre del título
+    public_id, // ✅ Asegura que tenga el nombre del título
     use_filename: false,
     unique_filename: false,
     overwrite: true,
   });
 };
-
 
 // 📄 Subir PDF público (curso)
 exports.uploadPdfPublico = async (req, res) => {
@@ -60,7 +61,6 @@ exports.uploadPdfPublico = async (req, res) => {
   }
 };
 
-
 // 📄 Subir PDF privado (clase)
 exports.uploadPdfPrivado = async (req, res) => {
   console.log("📥 Subiendo PDF privado...");
@@ -74,8 +74,8 @@ exports.uploadPdfPrivado = async (req, res) => {
   try {
     const result = await cloudinary.uploader.upload(file.path, {
       resource_type: "raw",
-      folder: "PDFsPrivados",      // 👈 Solo especificamos la carpeta aquí
-      public_id: publicId,         // ✅ El nombre final será: PDFsPrivados/clase_1_probando
+      folder: "PDFsPrivados", // 👈 Solo especificamos la carpeta aquí
+      public_id: publicId, // ✅ El nombre final será: PDFsPrivados/clase_1_probando
       use_filename: true,
       unique_filename: false,
       overwrite: true,
@@ -86,14 +86,11 @@ exports.uploadPdfPrivado = async (req, res) => {
 
     // Devolvemos la URL y el public_id generado por Cloudinary
     res.json({ url: result.secure_url, public_id: result.public_id });
-
   } catch (error) {
     console.error("❌ Error al subir PDF privado:", error.message);
     res.status(500).json({ error: "Error al subir PDF privado" });
   }
 };
-
-
 
 // 🗑 Eliminar archivo desde el panel
 exports.deleteArchivo = async (req, res) => {
@@ -123,11 +120,15 @@ exports.deleteArchivoCloudinary = async (public_id, resource_type = "raw") => {
   try {
     console.log(`🔄 Llamando a Cloudinary para eliminar: ${public_id}`);
 
-    const result = await cloudinary.uploader.destroy(public_id, { resource_type });
+    const result = await cloudinary.uploader.destroy(public_id, {
+      resource_type,
+    });
     console.log("📤 Respuesta de Cloudinary:", result);
 
     if (result.result !== "ok") {
-      console.warn(`⚠️ Cloudinary no eliminó el archivo: ${public_id} (resultado: ${result.result})`);
+      console.warn(
+        `⚠️ Cloudinary no eliminó el archivo: ${public_id} (resultado: ${result.result})`
+      );
     } else {
       console.log(`✅ Archivo eliminado de Cloudinary: ${public_id}`);
     }
@@ -137,7 +138,6 @@ exports.deleteArchivoCloudinary = async (public_id, resource_type = "raw") => {
     console.error("❌ Error al eliminar archivo de Cloudinary:", err.message);
   }
 };
-
 
 // 📸 Subida de imagen de curso (formato flyer)
 exports.uploadImagenCurso = async (req, res) => {
@@ -174,7 +174,9 @@ exports.deleteImagenesCurso = async (imagenesPorIdioma) => {
     const imageUrl = imagenesPorIdioma?.[lang];
 
     if (imageUrl && imageUrl.includes("cloudinary.com")) {
-      const match = imageUrl.match(/\/upload\/(?:v\d+\/)?ImagenesCursos\/(.+)\.(jpg|png|jpeg|webp)/i);
+      const match = imageUrl.match(
+        /\/upload\/(?:v\d+\/)?ImagenesCursos\/(.+)\.(jpg|png|jpeg|webp)/i
+      );
       const publicId = match ? `ImagenesCursos/${match[1]}` : null;
 
       if (publicId) {
@@ -190,5 +192,85 @@ exports.deleteImagenesCurso = async (imagenesPorIdioma) => {
     } else {
       console.log(`ℹ️ No hay imagen para idioma ${lang} o no es de Cloudinary`);
     }
+  }
+};
+
+exports.obtenerPdfPrivado = async (req, res) => {
+  const userId = req.user.id;
+  const { classId, pdfIndex, lang } = req.params;
+
+  console.log("📡 Solicitud para PDF privado recibida:", {
+    userId,
+    classId,
+    pdfIndex,
+    lang,
+  });
+
+  try {
+    const clase = await Class.findById(classId).populate("module");
+
+    if (!clase) {
+      console.warn("⚠️ Clase no encontrada:", classId);
+      return res.status(404).json({ error: "Clase no encontrada" });
+    }
+
+    console.log("✅ Clase encontrada:", clase.title?.es || clase._id);
+    console.log("📄 PDFs disponibles:", clase.pdfs?.length);
+
+    const modulo = clase.module;
+    if (!modulo) {
+      console.warn("⚠️ Módulo no encontrado dentro de clase:", classId);
+      return res.status(404).json({ error: "Módulo no encontrado" });
+    }
+
+    const formationId = modulo.formation;
+    if (!formationId) {
+      console.warn("⚠️ Formación no encontrada en módulo:", modulo._id);
+      return res.status(404).json({ error: "Formación no encontrada" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      console.warn("⚠️ Usuario no encontrado:", userId);
+      return res.status(403).json({ error: "Usuario no encontrado" });
+    }
+
+    console.log("👤 Usuario:", user.email, "| Rol:", user.role);
+
+    const pdfData = clase.pdfs?.[pdfIndex];
+    const pdfUrl = pdfData?.url?.[lang];
+
+    console.log("🔍 PDF seleccionado:", {
+      index: pdfIndex,
+      lang,
+      existePdf: !!pdfData,
+      url: pdfUrl,
+    });
+
+    // ✅ Permitir admins
+    if (user.role === "admin") {
+      console.log("🛡️ Usuario es admin. Acceso autorizado.");
+      return res.json({ url: pdfUrl });
+    }
+
+    const haComprado = user.formacionesCompradas.some((id) =>
+      id.equals(formationId)
+    );
+    console.log("🧾 ¿Compró la formación?", haComprado);
+
+    if (!haComprado) {
+      console.warn("⛔ Acceso denegado. No compró la formación.");
+      return res.status(403).json({ error: "No compraste esta formación" });
+    }
+
+    if (!pdfUrl) {
+      console.warn("❌ URL del PDF no encontrada para ese idioma o índice");
+      return res.status(404).json({ error: "PDF no encontrado" });
+    }
+
+    return res.json({ url: pdfUrl }); // 👈 ya no usamos redirect
+  } catch (err) {
+    console.error("❌ Error en el servidor:", err.message);
+    res.status(500).json({ error: "Error en el servidor" });
   }
 };

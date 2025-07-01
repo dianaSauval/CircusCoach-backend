@@ -202,16 +202,35 @@ const comprarCurso = async (req, res) => {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    if (!user.cursosComprados.includes(courseId)) {
+    const yaComprado = user.cursosComprados.includes(courseId);
+    const yaAceptado = user.aceptacionTerminos.some(
+      (item) => item.itemId.toString() === courseId && item.tipo === "curso"
+    );
+
+    if (!yaComprado) {
       user.cursosComprados.push(courseId);
-      await user.save();
     }
-    res.json({ message: "Curso agregado a cursos comprados", cursos: user.cursosComprados });
+
+    if (!yaAceptado) {
+      user.aceptacionTerminos.push({
+        tipo: "curso",
+        itemId: courseId,
+        aceptado: true,
+        fecha: new Date(),
+      });
+    }
+
+    await user.save();
+    res.json({
+      message: "Curso agregado a cursos comprados",
+      cursos: user.cursosComprados,
+    });
   } catch (error) {
     console.error("Error comprando curso:", error);
     res.status(500).json({ error: "Error en el servidor" });
   }
 };
+
 
 // Obtener cursos y formaciones compradas
 const getComprasDelUsuario = async (req, res) => {

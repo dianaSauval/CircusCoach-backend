@@ -1,6 +1,7 @@
 const Module = require("../models/Module");
 const Formation = require("../models/Formation");
 const Class = require("../models/Class");
+const { eliminarClaseConRecursos } = require("./classController");
 
 // 🔹 Middleware para verificar si el usuario es admin
 const isAdmin = (req) => req.user && req.user.role === "admin";
@@ -170,19 +171,29 @@ const deleteModule = async (req, res) => {
   try {
     const { moduleId } = req.params;
 
-    // ✅ Verificar si el módulo existe
     const moduleToDelete = await Module.findById(moduleId);
     if (!moduleToDelete) {
       return res.status(404).json({ error: "Módulo no encontrado" });
     }
 
-    // ✅ Eliminar todas las clases asociadas al módulo
-    await Class.deleteMany({ module: moduleId });
+    console.log(`🧹 Eliminando módulo con ID: ${moduleId}`);
 
-    // ✅ Eliminar el módulo
+    // ✅ 1. Eliminar todas las clases asociadas con sus recursos
+    const classIds = moduleToDelete.classes || [];
+
+    for (const classId of classIds) {
+      await eliminarClaseConRecursos(classId);
+    }
+
+    // ✅ 2. Eliminar el módulo en sí
     await Module.findByIdAndDelete(moduleId);
 
-    res.status(200).json({ message: "✅ Módulo y sus clases eliminados correctamente" });
+    // ✅ 3. Removerlo del array en la formación
+    await Formation.findByIdAndUpdate(moduleToDelete.formation, {
+      $pull: { modules: moduleId },
+    });
+
+    res.status(200).json({ message: "✅ Módulo y clases asociadas eliminadas correctamente" });
   } catch (error) {
     console.error("❌ Error eliminando módulo:", error);
     res.status(500).json({ error: "Error en el servidor", details: error.message });

@@ -7,7 +7,9 @@ const {
   deleteFromVimeo,
   getVimeoStatus,
   uploadVideoMiddleware,
+  obtenerVideoPrivado,
 } = require("../controllers/uploadController");
+const { authMiddleware } = require("../middlewares/authMiddleware"); 
 
 // 📤 Subir video promocional (público)
 router.post("/video-promocional", uploadVideoMiddleware, uploadPromotionalVideo);
@@ -20,5 +22,8 @@ router.post("/delete-video", deleteFromVimeo);
 
 // 🔍 Consultar estado del video en Vimeo
 router.get("/video-status/:videoId", getVimeoStatus);
+
+// 🔐 Obtener video privado solo si es admin o comprador
+router.get("/video/:classId/:videoIndex/:lang", authMiddleware, obtenerVideoPrivado);
 
 module.exports = router;

@@ -29,7 +29,15 @@ const userSchema = new mongoose.Schema({
       formationId: { type: mongoose.Schema.Types.ObjectId, ref: "Formation" },
       clasesCompletadas: [{ type: mongoose.Schema.Types.ObjectId, ref: "Class" }]
     }
-  ]
+  ],
+  aceptacionTerminos: [
+  {
+    tipo: { type: String, enum: ["curso", "formacion"], required: true },
+    itemId: { type: mongoose.Schema.Types.ObjectId, required: true }, // Course o Formation
+    aceptado: { type: Boolean, default: false },
+    fecha: { type: Date, default: Date.now },
+  }
+],
 });
 
 module.exports = mongoose.model("User", userSchema);

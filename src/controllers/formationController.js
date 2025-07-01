@@ -1,6 +1,10 @@
 const Formation = require("../models/Formation");
 const Module = require("../models/Module");
 const Class = require("../models/Class");
+const { eliminarClaseConRecursos } = require("./classController");
+const { eliminarVideosDeObjeto } = require("./uploadController");
+const { deleteArchivoCloudinary } = require("./cloudinaryController");
+const { deleteImagenesCurso } = require("./cloudinaryController");
 
 // 🔹 Middleware para verificar si el usuario es admin
 const isAdmin = (req) => req.user && req.user.role === "admin";
@@ -28,7 +32,6 @@ exports.getFormations = async (req, res) => {
     res.status(500).json({ error: "Error en el servidor" });
   }
 };
-
 
 // 🔹 Obtener todas las formaciones (admin)
 exports.getAllFormations = async (req, res) => {
@@ -70,8 +73,6 @@ exports.getFormationById = async (req, res) => {
   }
 };
 
-
-
 // 🔹 Obtener formación por ID
 exports.getFormationByIdAllInformation = async (req, res) => {
   try {
@@ -103,15 +104,21 @@ exports.getFormationVisibleContent = async (req, res) => {
     if (!formation.visible?.[lang]) {
       return res.status(403).json({
         error: "Esta formación no está disponible en este idioma",
-        visible: false
+        visible: false,
       });
     }
 
-    const modules = await Module.find({ formation: id, [`visible.${lang}`]: true });
+    const modules = await Module.find({
+      formation: id,
+      [`visible.${lang}`]: true,
+    });
 
     const modulesConClases = await Promise.all(
       modules.map(async (mod) => {
-        const classes = await Class.find({ module: mod._id, [`visible.${lang}`]: true }).select("title");
+        const classes = await Class.find({
+          module: mod._id,
+          [`visible.${lang}`]: true,
+        }).select("title");
         return {
           _id: mod._id,
           title: mod.title,
@@ -132,10 +139,11 @@ exports.getFormationVisibleContent = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error en getFormationVisibleContent:", error);
-    res.status(500).json({ error: "Error en el servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error en el servidor", details: error.message });
   }
 };
-
 
 // 🔹 Crear formación
 exports.createFormation = async (req, res) => {
@@ -145,7 +153,9 @@ exports.createFormation = async (req, res) => {
     const { title, description, price, pdf, video, image } = req.body;
 
     if (!title?.es || !description?.es || !price) {
-      return res.status(400).json({ error: "Título en español, descripción y precio son obligatorios" });
+      return res.status(400).json({
+        error: "Título en español, descripción y precio son obligatorios",
+      });
     }
 
     const newFormation = new Formation({
@@ -187,7 +197,9 @@ exports.createFormation = async (req, res) => {
     res.status(201).json(newFormation);
   } catch (error) {
     console.error("❌ ERROR en createFormation:", error);
-    res.status(500).json({ error: "Error en el servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error en el servidor", details: error.message });
   }
 };
 
@@ -254,10 +266,14 @@ exports.updateFormation = async (req, res) => {
     }
 
     await formation.save();
-    res.status(200).json({ message: "Formación actualizada correctamente", formation });
+    res
+      .status(200)
+      .json({ message: "Formación actualizada correctamente", formation });
   } catch (error) {
     console.error("❌ ERROR en updateFormation:", error);
-    res.status(500).json({ error: "Error en el servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error en el servidor", details: error.message });
   }
 };
 
@@ -268,7 +284,8 @@ exports.makeFormationVisibleInAllLanguages = async (req, res) => {
   try {
     const { id } = req.params;
     const formation = await Formation.findById(id);
-    if (!formation) return res.status(404).json({ error: "Formación no encontrada" });
+    if (!formation)
+      return res.status(404).json({ error: "Formación no encontrada" });
 
     formation.visible = { es: true, en: true, fr: true };
     await formation.save();
@@ -293,13 +310,16 @@ exports.toggleFormationVisibilityByLanguage = async (req, res) => {
     }
 
     const formation = await Formation.findById(id);
-    if (!formation) return res.status(404).json({ error: "Formación no encontrada" });
+    if (!formation)
+      return res.status(404).json({ error: "Formación no encontrada" });
 
     formation.visible[language] = !formation.visible[language];
     await formation.save();
 
     res.json({
-      message: `Formación en ${language.toUpperCase()} ahora es ${formation.visible[language] ? "visible" : "oculta"}`,
+      message: `Formación en ${language.toUpperCase()} ahora es ${
+        formation.visible[language] ? "visible" : "oculta"
+      }`,
     });
   } catch (error) {
     console.error("Error cambiando visibilidad por idioma:", error);
@@ -307,26 +327,123 @@ exports.toggleFormationVisibilityByLanguage = async (req, res) => {
   }
 };
 
-// 🔹 Eliminar formación (junto con módulos y clases asociadas)
+// 🔹 Eliminar formación (junto con módulos, clases, videos y PDFs asociados)
 exports.deleteFormation = async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "No autorizado" });
 
   try {
-    const formation = await Formation.findById(req.params.id);
+    const formation = await Formation.findById(req.params.id).populate(
+      "modules"
+    );
+
     if (!formation) {
       return res.status(404).json({ error: "Formación no encontrada" });
     }
 
-    const modules = await Module.find({ formation: formation._id });
-    const moduleIds = modules.map((mod) => mod._id);
+    console.log(`🧹 Eliminando formación con ID: ${formation._id}`);
 
-    await Class.deleteMany({ module: { $in: moduleIds } });
-    await Module.deleteMany({ formation: formation._id });
+    // 🔸 1. Eliminar videos de la formación
+    await eliminarVideosDeObjeto(formation.video);
+
+    // 🔸 2. Eliminar PDFs públicos
+    for (const lang of ["es", "en", "fr"]) {
+      const url = formation.pdf?.[lang];
+      if (url && url.includes("cloudinary.com")) {
+        const match = url.match(
+          /\/upload\/(?:v\d+\/)?PDFsPublicos\/(.+)\.pdf/i
+        );
+        const publicId = match ? `PDFsPublicos/${match[1]}.pdf` : null;
+        if (publicId) {
+          await deleteArchivoCloudinary(publicId, "raw");
+          console.log(`✅ PDF eliminado: ${publicId}`);
+        }
+      }
+    }
+
+    // 🔸 3. Eliminar imágenes de la formación
+    await deleteImagenesCurso(formation.image);
+
+    // 🔸 4. Eliminar módulos y clases asociadas
+    const modules = formation.modules;
+
+    for (const mod of modules) {
+      const module = await Module.findById(mod._id).populate("classes");
+
+      if (module?.classes?.length > 0) {
+        for (const clase of module.classes) {
+          console.log(`🔍 Procesando clase: ${clase._id}`);
+
+          if (clase.videos?.length > 0) {
+            console.log(
+              `🎬 Videos encontrados en clase ${clase._id}:`,
+              clase.videos
+            );
+            for (const video of clase.videos) {
+              console.log(`⛔ Eliminando video con URL:`, video.url);
+              await eliminarVideosDeObjeto(video.url);
+            }
+          } else {
+            console.log(`⚠️ No se encontraron videos en clase ${clase._id}`);
+          }
+
+          if (clase.pdfs?.length > 0) {
+            console.log(
+              `📄 PDFs encontrados en clase ${clase._id}:`,
+              clase.pdfs
+            );
+            for (const pdf of clase.pdfs) {
+              const publicIds = Object.values(pdf.url || {})
+                .filter((url) => url.includes("cloudinary.com"))
+                .map((url) => {
+                  const match = url.match(
+                    /\/upload\/(?:v\d+\/)?PDFsPrivados\/(.+)\.pdf/
+                  );
+                  return match ? `PDFsPrivados/${match[1]}.pdf` : null;
+                })
+                .filter(Boolean);
+
+              console.log(`📑 publicIds encontrados:`, publicIds);
+
+              for (const publicId of publicIds) {
+                try {
+                  console.log(
+                    `⛔ Eliminando PDF desde Cloudinary: ${publicId}`
+                  );
+                  await deleteArchivoCloudinary(publicId, "raw");
+                  console.log(`✅ PDF eliminado: ${publicId}`);
+                } catch (err) {
+                  console.warn(
+                    `⚠️ Error al eliminar PDF ${publicId}:`,
+                    err.message
+                  );
+                }
+              }
+            }
+          } else {
+            console.log(`⚠️ No se encontraron PDFs en clase ${clase._id}`);
+          }
+
+          await Class.findByIdAndDelete(clase._id);
+          console.log(`🗑️ Clase eliminada: ${clase._id}`);
+        }
+      } else {
+        console.log(`⚠️ El módulo ${mod._id} no tiene clases`);
+      }
+
+      await Module.findByIdAndDelete(mod._id);
+      console.log(`🗑️ Módulo eliminado: ${mod._id}`);
+    }
+
+    // 🔸 5. Eliminar la formación en sí
     await Formation.findByIdAndDelete(req.params.id);
 
-    res.json({ message: "Formación, módulos y clases eliminados correctamente" });
+    res.json({
+      message: "Formación y todos sus recursos eliminados correctamente",
+    });
   } catch (error) {
     console.error("❌ ERROR en deleteFormation:", error);
-    res.status(500).json({ error: "Error en el servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error en el servidor", details: error.message });
   }
 };

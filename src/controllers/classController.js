@@ -1,5 +1,7 @@
 const Class = require("../models/Class");
 const Module = require("../models/Module");
+const { eliminarVideosDeObjeto } = require("./uploadController");
+const { deleteArchivoCloudinary } = require("./cloudinaryController");
 
 // 🔹 Middleware para verificar si el usuario es admin
 const isAdmin = (req) => req.user && req.user.role === "admin";
@@ -14,7 +16,6 @@ const getAllClasses = async (req, res) => {
     res.status(500).json({ error: "Error en el servidor" });
   }
 };
-
 
 // 🔹 Obtener clases visibles por formación (para alumnos y admin)
 const getClassesByModule = async (req, res) => {
@@ -34,7 +35,11 @@ const getClassesByModule = async (req, res) => {
     // Si el usuario no es admin, filtrar solo las clases visibles
     const query = { module: moduleId };
     if (!isAdminRequest) {
-      query.$or = [{ "visible.es": true }, { "visible.en": true }, { "visible.fr": true }];
+      query.$or = [
+        { "visible.es": true },
+        { "visible.en": true },
+        { "visible.fr": true },
+      ];
     }
 
     const classes = await Class.find(query);
@@ -44,7 +49,9 @@ const getClassesByModule = async (req, res) => {
     res.status(200).json(classes);
   } catch (error) {
     console.error("❌ Error al obtener clases:", error);
-    res.status(500).json({ error: "Error en el servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error en el servidor", details: error.message });
   }
 };
 
@@ -53,12 +60,22 @@ const createClass = async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "No autorizado" });
 
   try {
-    console.log("📩 Datos recibidos en el backend:", req.body); // 🔹 Verifica qué datos llegan
+    console.log("📩 Datos recibidos en el backend:", req.body);
 
-    const { title, subtitle, content, secondaryContent, pdfs, videos, moduleId } = req.body;
+    const {
+      title,
+      subtitle,
+      content,
+      secondaryContent,
+      pdfs,
+      videos,
+      moduleId,
+    } = req.body;
 
     if (!title || !moduleId) {
-      return res.status(400).json({ error: "El título y el módulo son obligatorios" });
+      return res
+        .status(400)
+        .json({ error: "El título y el módulo son obligatorios" });
     }
 
     const newClass = new Class({
@@ -69,16 +86,24 @@ const createClass = async (req, res) => {
       pdfs,
       videos,
       module: moduleId,
-      visible: { es: false, en: false, fr: false }
+      visible: { es: false, en: false, fr: false },
     });
 
     await newClass.save();
-    console.log("✅ Clase creada con éxito:", newClass);
+
+    // 🔥 Aquí se asocia la clase al módulo correspondiente
+    await Module.findByIdAndUpdate(moduleId, {
+      $push: { classes: newClass._id },
+    });
+
+    console.log("✅ Clase creada y asociada al módulo con éxito:", newClass);
 
     res.status(201).json(newClass);
   } catch (error) {
     console.error("❌ Error en createClass:", error);
-    res.status(500).json({ error: "Error en el servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error en el servidor", details: error.message });
   }
 };
 
@@ -87,9 +112,14 @@ const updateClass = async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "No autorizado" });
 
   try {
-    const updatedClass = await Class.findByIdAndUpdate(req.params.classId, req.body, { new: true });
+    const updatedClass = await Class.findByIdAndUpdate(
+      req.params.classId,
+      req.body,
+      { new: true }
+    );
 
-    if (!updatedClass) return res.status(404).json({ error: "Clase no encontrada" });
+    if (!updatedClass)
+      return res.status(404).json({ error: "Clase no encontrada" });
 
     res.json(updatedClass);
   } catch (error) {
@@ -104,7 +134,8 @@ const makeClassVisibleInAllLanguages = async (req, res) => {
 
   try {
     const classItem = await Class.findById(req.params.classId);
-    if (!classItem) return res.status(404).json({ error: "Clase no encontrada" });
+    if (!classItem)
+      return res.status(404).json({ error: "Clase no encontrada" });
 
     classItem.visible = { es: true, en: true, fr: true };
     await classItem.save();
@@ -130,13 +161,18 @@ const toggleClassVisibilityByLanguage = async (req, res) => {
     }
 
     const classItem = await Class.findById(classId);
-    if (!classItem) return res.status(404).json({ error: "Clase no encontrada" });
+    if (!classItem)
+      return res.status(404).json({ error: "Clase no encontrada" });
 
     // 🔹 Cambiar visibilidad del idioma específico
     classItem.visible[lang] = !classItem.visible[lang];
     await classItem.save();
 
-    res.json({ message: `Clase ahora es ${classItem.visible[lang] ? "visible" : "oculta"} en ${lang}` });
+    res.json({
+      message: `Clase ahora es ${
+        classItem.visible[lang] ? "visible" : "oculta"
+      } en ${lang}`,
+    });
   } catch (error) {
     console.error("Error cambiando visibilidad por idioma:", error);
     res.status(500).json({ error: "Error en el servidor" });
@@ -148,14 +184,117 @@ const deleteClass = async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "No autorizado" });
 
   try {
-    const classDeleted = await Class.findByIdAndDelete(req.params.classId);
-    if (!classDeleted) return res.status(404).json({ error: "Clase no encontrada" });
+    const { classId } = req.params;
+    const clase = await Class.findById(classId);
 
-    res.json({ message: "Clase eliminada correctamente" });
+    if (!clase) return res.status(404).json({ error: "Clase no encontrada" });
+
+    console.log(`🧹 Eliminando clase con ID: ${classId}`);
+
+    // 🔸 Eliminar VIDEOS de Vimeo
+    for (const video of clase.videos) {
+      await eliminarVideosDeObjeto(video.url);
+    }
+
+    // 🔸 Eliminar PDFs de Cloudinary
+    for (const pdf of clase.pdfs) {
+      const urls = Object.values(pdf.url).filter((url) =>
+        url.includes("cloudinary.com")
+      );
+
+      const publicIds = urls
+        .map((url) => {
+          try {
+            const parts = new URL(url).pathname.split("/");
+            const folderIndex = parts.findIndex(
+              (part) => part === "PDFsPrivados" || part === "PDFsPublicos"
+            );
+            if (folderIndex !== -1 && parts[folderIndex + 1]) {
+              const folder = parts[folderIndex];
+              const filenameWithExt = parts[folderIndex + 1];
+              return `${folder}/${filenameWithExt}`;
+            }
+          } catch (e) {
+            console.warn("⚠️ No se pudo analizar la URL del PDF:", url);
+            return null;
+          }
+        })
+        .filter(Boolean);
+
+      for (const publicId of publicIds) {
+        try {
+          console.log(`⛔ Eliminando PDF desde Cloudinary: ${publicId}`);
+          await deleteArchivoCloudinary(publicId, "raw");
+        } catch (err) {
+          console.warn(`⚠️ Error al eliminar PDF ${publicId}:`, err.message);
+        }
+      }
+    }
+
+    // 🔸 Eliminar la clase en sí
+    await Class.findByIdAndDelete(classId);
+
+    console.log("✅ Clase y recursos eliminados correctamente");
+    res.json({ message: "Clase y recursos eliminados correctamente" });
   } catch (error) {
-    console.error("Error eliminando clase:", error);
+    console.error("💥 Error eliminando clase:", error);
     res.status(500).json({ error: "Error en el servidor" });
   }
+};
+
+const eliminarClaseConRecursos = async (classId) => {
+  const clase = await Class.findById(classId).lean(); // ⚠️ Usa .lean()
+
+  if (!clase) {
+    console.warn(`⚠️ Clase con ID ${classId} no encontrada`);
+    return;
+  }
+
+  console.log(`🧹 Eliminando clase con ID: ${classId}`);
+
+  // 1. Eliminar videos
+  for (const video of clase.videos || []) {
+    await eliminarVideosDeObjeto(video.url);
+  }
+
+  // 2. Eliminar PDFs
+  for (const pdf of clase.pdfs || []) {
+    const urls = Object.values(pdf.url || {}).filter((url) =>
+      url.includes("cloudinary.com")
+    );
+
+    const publicIds = urls
+      .map((url) => {
+        try {
+          const parts = new URL(url).pathname.split("/");
+          const folderIndex = parts.findIndex(
+            (part) => part === "PDFsPrivados" || part === "PDFsPublicos"
+          );
+          if (folderIndex !== -1 && parts[folderIndex + 1]) {
+            const folder = parts[folderIndex];
+            const filenameWithExt = parts[folderIndex + 1];
+            return `${folder}/${filenameWithExt}`;
+          }
+        } catch (e) {
+          console.warn("⚠️ No se pudo analizar la URL del PDF:", url);
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    for (const publicId of publicIds) {
+      try {
+        console.log(`⛔ Eliminando PDF desde Cloudinary: ${publicId}`);
+        await deleteArchivoCloudinary(publicId, "raw");
+      } catch (err) {
+        console.warn(`⚠️ Error al eliminar PDF ${publicId}:`, err.message);
+      }
+    }
+  }
+
+  // 3. Eliminar la clase en sí
+  await Class.findByIdAndDelete(classId);
+  console.log(`✅ Clase ${classId} y recursos eliminados`);
 };
 
 // 🔹 Obtener clase por ID (filtrando por idioma)
@@ -169,7 +308,9 @@ const getClassById = async (req, res) => {
 
     // Si la clase no está visible en ese idioma (y no es admin), rechazar
     if (!clase.visible?.[lang]) {
-      return res.status(403).json({ error: "Esta clase no está disponible en este idioma" });
+      return res
+        .status(403)
+        .json({ error: "Esta clase no está disponible en este idioma" });
     }
 
     res.json({
@@ -183,7 +324,9 @@ const getClassById = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error al obtener clase por ID:", error);
-    res.status(500).json({ error: "Error en el servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error en el servidor", details: error.message });
   }
 };
 
@@ -199,10 +342,11 @@ const getClassByIdAdmin = async (req, res) => {
     res.json(clase); // 🔹 Devuelve todo el objeto completo
   } catch (error) {
     console.error("❌ Error al obtener clase por ID (admin):", error);
-    res.status(500).json({ error: "Error en el servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error en el servidor", details: error.message });
   }
 };
-
 
 module.exports = {
   getAllClasses,
@@ -214,4 +358,5 @@ module.exports = {
   makeClassVisibleInAllLanguages,
   toggleClassVisibilityByLanguage,
   deleteClass,
+  eliminarClaseConRecursos,
 };
