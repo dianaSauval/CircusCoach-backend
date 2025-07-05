@@ -57,7 +57,6 @@ router.get("/confirmar-compra", authMiddleware, async (req, res) => {
       ? JSON.parse(session.metadata.items)
       : [];
 
-      
     if (!items.length) {
       return res
         .status(400)
@@ -73,7 +72,6 @@ router.get("/confirmar-compra", authMiddleware, async (req, res) => {
 
     // ✅ NUEVO: usar función reutilizable
     const { agregados, yaTenia } = await registrarCompraUsuario(user, items);
-   
 
     res.json({ success: true, agregados, yaTenia });
   } catch (error) {
@@ -91,10 +89,11 @@ router.post("/crear-payment-intent", async (req, res) => {
     const total = items.reduce((sum, item) => sum + item.price, 0);
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: total * 100,
+      amount: Math.round(total * 100),
       currency: "eur",
+      payment_method_types: ["card", "klarna", "eps", "giropay", "bancontact"],
       metadata: {
-        userId: "id-mockeado", // opcional, si querés guardar el ID real también podrías
+        userId: "id-mockeado", // si tenés el real, reemplazalo
         items: JSON.stringify(
           items.map((i) => ({
             id: i.id,
@@ -111,54 +110,67 @@ router.post("/crear-payment-intent", async (req, res) => {
   }
 });
 
-
-
-router.post("/confirmar-compra-payment-intent", authMiddleware, async (req, res) => {
+router.post(
+  "/confirmar-compra-payment-intent",
+  authMiddleware,
+  async (req, res) => {
     console.log("📩 Se recibió una solicitud para confirmar un PaymentIntent");
-  console.log("➡️ ID recibido:", req.body.paymentIntentId);
-  try {
-    const { paymentIntentId } = req.body;
+    console.log("➡️ ID recibido:", req.body.paymentIntentId);
+    try {
+      const { paymentIntentId } = req.body;
 
-    const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      console.log("💳 Método de pago usado:", intent.payment_method_types);
+      console.log(
+        "📄 Detalles del método de pago:",
+        intent.charges?.data?.[0]?.payment_method_details
+      );
 
-    if (!intent || intent.status !== "succeeded") {
-      return res.status(400).json({
+      if (!intent || intent.status !== "succeeded") {
+        return res.status(400).json({
+          success: false,
+          error: "El pago no se completó correctamente.",
+        });
+      }
+
+      const items = intent.metadata?.items
+        ? JSON.parse(intent.metadata.items)
+        : [];
+
+      if (!items.length) {
+        return res.status(400).json({
+          success: false,
+          error: "No se encontraron productos en la metadata.",
+        });
+      }
+
+      const { agregados, yaTenia, yaProcesado } = await registrarCompraUsuario(
+        req.user.id,
+        items,
+        paymentIntentId
+      );
+
+      if (yaProcesado) {
+        console.log("⚠️ Este PaymentIntent ya fue procesado anteriormente");
+        return res.status(200).json({
+          success: true,
+          message: "Este pago ya fue confirmado antes",
+          agregados: [],
+          yaTenia: [],
+        });
+      }
+
+      console.log("✅ Compra registrada con éxito:", { agregados, yaTenia });
+      res.json({ success: true, agregados, yaTenia });
+    } catch (error) {
+      console.error("❌ Error al confirmar payment intent:", error);
+      res.status(500).json({
         success: false,
-        error: "El pago no se completó correctamente.",
+        error: "Error interno al confirmar la compra",
       });
     }
-
-    const items = intent.metadata?.items
-      ? JSON.parse(intent.metadata.items)
-      : [];
-
-    if (!items.length) {
-      return res.status(400).json({
-        success: false,
-        error: "No se encontraron productos en la metadata.",
-      });
-    }
-
-    const user = await User.findById(req.user.id);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: "Usuario no encontrado",
-      });
-    }
-
-    // ✅ Reutilizamos tu función para registrar la compra
-    const { agregados, yaTenia } = await registrarCompraUsuario(user, items);
- console.log("✅ Compra registrada con éxito:", { agregados, yaTenia });
-    res.json({ success: true, agregados, yaTenia });
-  } catch (error) {
-    console.error("❌ Error al confirmar payment intent:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error interno al confirmar la compra",
-    });
   }
-});
+);
 
 
 module.exports = router;

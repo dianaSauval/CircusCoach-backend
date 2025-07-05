@@ -29,6 +29,8 @@ const pagosRoutes = require("./routes/pagosRoutes");
 const uploadRoutes = require("./routes/videoRoutes");
 const stripeRoutes = require("./routes/stripe");
 const cloudinaryRoutes = require("./routes/cloudinaryRoutes");
+const webhookRoutes = require("./routes/webhookRoutes");
+
 
 // Configuración de rutas
 app.use("/api/auth", authRoutes);
@@ -43,6 +45,7 @@ app.use("/api/pagos", pagosRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/stripe", stripeRoutes); // rutas como /crear-sesion
 app.use("/api/cloudinary", cloudinaryRoutes);
+app.use("/api/stripe", webhookRoutes);
 
 app.get("/", (req, res) => {
   res.send("🚀 API de CircusCoach funcionando correctamente");

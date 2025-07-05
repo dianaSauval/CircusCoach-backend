@@ -38,6 +38,7 @@ const userSchema = new mongoose.Schema({
     fecha: { type: Date, default: Date.now },
   }
 ],
+intentsConfirmados: [String],
 });
 
 module.exports = mongoose.model("User", userSchema);
