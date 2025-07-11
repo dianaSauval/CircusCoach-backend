@@ -2,27 +2,28 @@ const mongoose = require("mongoose");
 
 const discountSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true }, // Ej: "Invierno 2025"
-    description: { type: String, default: "" }, // Para mostrar en el panel
-    percentage: { type: Number, default: 0 }, // Ej: 20 = 20%
-    amount: { type: Number, default: 0 }, // Ej: 10 = €10 fijo
-
+    name: { type: String, required: true },
+    description: { type: String, default: "" },
+    percentage: { type: Number, default: 0 },
+    amount: { type: Number, default: 0 },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     active: { type: Boolean, default: true },
-
-    // Aplica a uno o más tipos de elementos
     type: {
       type: String,
-      enum: ["course", "formation", "both"], // 'both' si se aplica a ambos
+      enum: ["course", "formation", "both"],
       default: "course"
     },
-
-    // Array de IDs de cursos o formaciones según el tipo
     targetIds: [
       {
         type: mongoose.Schema.Types.ObjectId,
         required: true
+      }
+    ],
+    targetItems: [
+      {
+        _id: { type: String, required: true },
+        title: { type: String, required: true }
       }
     ]
   },
@@ -30,5 +31,6 @@ const discountSchema = new mongoose.Schema(
     timestamps: true
   }
 );
+
 
 module.exports = mongoose.model("Discount", discountSchema);

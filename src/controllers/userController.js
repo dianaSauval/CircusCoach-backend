@@ -29,28 +29,45 @@ const createUser = async (req, res) => {
   try {
     const { name, surname, email, password, role } = req.body;
     if (!name || !surname || !email || !password) {
-      return res.status(400).json({ error: "Todos los campos son obligatorios" });
+      return res
+        .status(400)
+        .json({ error: "Todos los campos son obligatorios" });
     }
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ error: "Ya existe una cuenta con ese correo electrónico" });
+      return res
+        .status(400)
+        .json({ error: "Ya existe una cuenta con ese correo electrónico" });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
     const userRole = role || "user";
-    const newUser = new User({ name, surname, email, password: hashedPassword, role: userRole });
+    const newUser = new User({
+      name,
+      surname,
+      email,
+      password: hashedPassword,
+      role: userRole,
+    });
     await newUser.save();
-    res.status(201).json({ message: "Usuario creado con éxito", user: newUser });
+    res
+      .status(201)
+      .json({ message: "Usuario creado con éxito", user: newUser });
   } catch (error) {
     console.error("Error creando usuario:", error);
-    res.status(500).json({ error: "Error en el servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error en el servidor", details: error.message });
   }
 };
 
 // Editar un usuario
 const updateUser = async (req, res) => {
   try {
-    const updatedUser = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!updatedUser) return res.status(404).json({ error: "Usuario no encontrado" });
+    const updatedUser = await User.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    });
+    if (!updatedUser)
+      return res.status(404).json({ error: "Usuario no encontrado" });
     res.json(updatedUser);
   } catch (error) {
     console.error("Error actualizando usuario:", error);
@@ -62,7 +79,8 @@ const updateUser = async (req, res) => {
 const deleteUser = async (req, res) => {
   try {
     const deletedUser = await User.findByIdAndDelete(req.params.id);
-    if (!deletedUser) return res.status(404).json({ error: "Usuario no encontrado" });
+    if (!deletedUser)
+      return res.status(404).json({ error: "Usuario no encontrado" });
     res.json({ message: "Usuario eliminado correctamente" });
   } catch (error) {
     console.error("Error eliminando usuario:", error);
@@ -79,7 +97,9 @@ const marcarClaseCurso = async (req, res) => {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    let curso = user.progresoCursos.find((p) => p.courseId.toString() === courseId);
+    let curso = user.progresoCursos.find(
+      (p) => p.courseId.toString() === courseId
+    );
     if (!curso) {
       user.progresoCursos.push({ courseId, clasesCompletadas: [classId] });
     } else {
@@ -88,7 +108,10 @@ const marcarClaseCurso = async (req, res) => {
       }
     }
     await user.save();
-    res.json({ message: "Clase marcada como completada en curso", progreso: user.progresoCursos });
+    res.json({
+      message: "Clase marcada como completada en curso",
+      progreso: user.progresoCursos,
+    });
   } catch (error) {
     console.error("Error marcando clase en curso:", error);
     res.status(500).json({ error: "Error en el servidor" });
@@ -104,12 +127,19 @@ const desmarcarClaseCurso = async (req, res) => {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    const progreso = user.progresoCursos.find((p) => p.courseId.toString() === courseId);
+    const progreso = user.progresoCursos.find(
+      (p) => p.courseId.toString() === courseId
+    );
     if (progreso) {
-      progreso.clasesCompletadas = progreso.clasesCompletadas.filter((cid) => cid.toString() !== classId);
+      progreso.clasesCompletadas = progreso.clasesCompletadas.filter(
+        (cid) => cid.toString() !== classId
+      );
     }
     await user.save();
-    res.json({ message: "Clase desmarcada del curso", progreso: user.progresoCursos });
+    res.json({
+      message: "Clase desmarcada del curso",
+      progreso: user.progresoCursos,
+    });
   } catch (error) {
     console.error("Error desmarcando clase de curso:", error);
     res.status(500).json({ error: "Error en el servidor" });
@@ -125,16 +155,24 @@ const marcarClaseFormacion = async (req, res) => {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    let formacion = user.progresoFormaciones.find((p) => p.formationId.toString() === formationId);
+    let formacion = user.progresoFormaciones.find(
+      (p) => p.formationId.toString() === formationId
+    );
     if (!formacion) {
-      user.progresoFormaciones.push({ formationId, clasesCompletadas: [classId] });
+      user.progresoFormaciones.push({
+        formationId,
+        clasesCompletadas: [classId],
+      });
     } else {
       if (!formacion.clasesCompletadas.includes(classId)) {
         formacion.clasesCompletadas.push(classId);
       }
     }
     await user.save();
-    res.json({ message: "Clase marcada como hecha en formación", progreso: user.progresoFormaciones });
+    res.json({
+      message: "Clase marcada como hecha en formación",
+      progreso: user.progresoFormaciones,
+    });
   } catch (error) {
     console.error("Error marcando clase en formación:", error);
     res.status(500).json({ error: "Error en el servidor" });
@@ -150,12 +188,19 @@ const desmarcarClaseFormacion = async (req, res) => {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    const progreso = user.progresoFormaciones.find((p) => p.formationId.toString() === formationId);
+    const progreso = user.progresoFormaciones.find(
+      (p) => p.formationId.toString() === formationId
+    );
     if (progreso) {
-      progreso.clasesCompletadas = progreso.clasesCompletadas.filter((cid) => cid.toString() !== classId);
+      progreso.clasesCompletadas = progreso.clasesCompletadas.filter(
+        (cid) => cid.toString() !== classId
+      );
     }
     await user.save();
-    res.json({ message: "Clase desmarcada de formación", progreso: user.progresoFormaciones });
+    res.json({
+      message: "Clase desmarcada de formación",
+      progreso: user.progresoFormaciones,
+    });
   } catch (error) {
     console.error("Error desmarcando clase en formación:", error);
     res.status(500).json({ error: "Error en el servidor" });
@@ -170,7 +215,9 @@ const obtenerProgresoFormacion = async (req, res) => {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    const progreso = user.progresoFormaciones.find((p) => p.formationId.toString() === formationId);
+    const progreso = user.progresoFormaciones.find(
+      (p) => p.formationId.toString() === formationId
+    );
     res.json(progreso || { formationId, clasesCompletadas: [] });
   } catch (error) {
     console.error("Error obteniendo progreso de formación:", error);
@@ -183,10 +230,14 @@ const obtenerProgresoCurso = async (req, res) => {
   const { id, courseId } = req.params;
 
   try {
-    const user = await User.findById(id).populate("progresoCursos.clasesCompletadas");
+    const user = await User.findById(id).populate(
+      "progresoCursos.clasesCompletadas"
+    );
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    const progreso = user.progresoCursos.find((p) => p.courseId.toString() === courseId);
+    const progreso = user.progresoCursos.find(
+      (p) => p.courseId.toString() === courseId
+    );
     res.json(progreso || { courseId, clasesCompletadas: [] });
   } catch (error) {
     console.error("Error obteniendo progreso del curso:", error);
@@ -231,21 +282,25 @@ const comprarCurso = async (req, res) => {
   }
 };
 
-
 // Obtener cursos y formaciones compradas
 const getComprasDelUsuario = async (req, res) => {
   try {
     const userId = req.user.id;
     const user = await User.findById(userId)
-      .populate("cursosComprados")
-      .populate("formacionesCompradas");
+      .populate("cursosComprados.courseId")
+      .populate("formacionesCompradas.formationId");
 
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    res.json({ cursos: user.cursosComprados, formaciones: user.formacionesCompradas });
+    res.json({
+      cursos: user.cursosComprados,
+      formaciones: user.formacionesCompradas,
+    });
   } catch (error) {
     console.error("❌ Error en getComprasDelUsuario:", error);
-    res.status(500).json({ error: "Error en el servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error en el servidor", details: error.message });
   }
 };
 

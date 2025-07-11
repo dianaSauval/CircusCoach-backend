@@ -11,35 +11,44 @@ const userSchema = new mongoose.Schema({
   resetTokenExpire: { type: Date },
 
   cursosComprados: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "Course" }
+    {
+      courseId: { type: mongoose.Schema.Types.ObjectId, ref: "Course" },
+      fechaExpiracion: { type: Date, required: true },
+    },
   ],
   formacionesCompradas: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "Formation" }
+    {
+      formationId: { type: mongoose.Schema.Types.ObjectId, ref: "Formation" },
+      fechaExpiracion: { type: Date, required: true },
+    },
   ],
 
   progresoCursos: [
     {
       courseId: { type: mongoose.Schema.Types.ObjectId, ref: "Course" },
-      clasesCompletadas: [{ type: mongoose.Schema.Types.ObjectId, ref: "CourseClass" }]
-    }
+      clasesCompletadas: [
+        { type: mongoose.Schema.Types.ObjectId, ref: "CourseClass" },
+      ],
+    },
   ],
 
   progresoFormaciones: [
     {
       formationId: { type: mongoose.Schema.Types.ObjectId, ref: "Formation" },
-      clasesCompletadas: [{ type: mongoose.Schema.Types.ObjectId, ref: "Class" }]
-    }
+      clasesCompletadas: [
+        { type: mongoose.Schema.Types.ObjectId, ref: "Class" },
+      ],
+    },
   ],
   aceptacionTerminos: [
-  {
-    tipo: { type: String, enum: ["curso", "formacion"], required: true },
-    itemId: { type: mongoose.Schema.Types.ObjectId, required: true }, // Course o Formation
-    aceptado: { type: Boolean, default: false },
-    fecha: { type: Date, default: Date.now },
-  }
-],
-intentsConfirmados: [String],
+    {
+      tipo: { type: String, enum: ["curso", "formacion"], required: true },
+      itemId: { type: mongoose.Schema.Types.ObjectId, required: true }, // Course o Formation
+      aceptado: { type: Boolean, default: false },
+      fecha: { type: Date, default: Date.now },
+    },
+  ],
+  intentsConfirmados: [String],
 });
 
 module.exports = mongoose.model("User", userSchema);
-

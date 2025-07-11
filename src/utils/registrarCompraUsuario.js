@@ -1,24 +1,28 @@
 // utils/registrarCompraUsuario.js
-const User = require("../models/User"); // asegurate de importar el modelo
+const User = require("../models/User");
 
+const calcularFechaExpiracion = (meses) => {
+  const fecha = new Date();
+  fecha.setMonth(fecha.getMonth() + meses);
+  // Ajuste para que expire al final del día
+  fecha.setHours(23, 59, 59, 999);
+  return fecha;
+};
 
 const registrarCompraUsuario = async (userId, items, paymentIntentId) => {
   const agregados = [];
   const yaTenia = [];
 
-  // Paso 1: Intentar agregar el paymentIntentId de forma atómica
   const result = await User.findOneAndUpdate(
     { _id: userId, intentsConfirmados: { $ne: paymentIntentId } },
     { $addToSet: { intentsConfirmados: paymentIntentId } },
     { new: true }
   );
 
-  // Si result es null, ya estaba confirmado
   if (!result) {
     return { agregados: [], yaTenia: [], yaProcesado: true };
   }
 
-  // Paso 2: continuar agregando cursos/formaciones
   for (let item of items) {
     const itemId = item.id.toString();
 
@@ -27,9 +31,14 @@ const registrarCompraUsuario = async (userId, items, paymentIntentId) => {
     );
 
     if (item.type === "course") {
-      const yaComprado = result.cursosComprados.some(id => id.toString() === itemId);
+      const yaComprado = result.cursosComprados.some(
+        (c) => c.courseId.toString() === itemId
+      );
       if (!yaComprado) {
-        result.cursosComprados.push(item.id);
+        result.cursosComprados.push({
+          courseId: item.id,
+          fechaExpiracion: calcularFechaExpiracion(6),
+        });
         agregados.push(item);
         if (!yaAceptado) {
           result.aceptacionTerminos.push({
@@ -45,9 +54,14 @@ const registrarCompraUsuario = async (userId, items, paymentIntentId) => {
     }
 
     if (item.type === "formation") {
-      const yaComprado = result.formacionesCompradas.some(id => id.toString() === itemId);
+      const yaComprado = result.formacionesCompradas.some(
+        (f) => f.formationId.toString() === itemId
+      );
       if (!yaComprado) {
-        result.formacionesCompradas.push(item.id);
+        result.formacionesCompradas.push({
+          formationId: item.id,
+          fechaExpiracion: calcularFechaExpiracion(6),
+        });
         agregados.push(item);
         if (!yaAceptado) {
           result.aceptacionTerminos.push({
@@ -63,9 +77,7 @@ const registrarCompraUsuario = async (userId, items, paymentIntentId) => {
     }
   }
 
-  // Guardar todo junto al final
   await result.save();
-
   return { agregados, yaTenia, yaProcesado: false };
 };
 
