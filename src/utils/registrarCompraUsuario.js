@@ -1,13 +1,5 @@
-// utils/registrarCompraUsuario.js
 const User = require("../models/User");
-
-const calcularFechaExpiracion = (meses) => {
-  const fecha = new Date();
-  fecha.setMonth(fecha.getMonth() + meses);
-  // Ajuste para que expire al final del día
-  fecha.setHours(23, 59, 59, 999);
-  return fecha;
-};
+const actualizarCompraConExpiracion = require("./actualizarCompraConExpiracion");
 
 const registrarCompraUsuario = async (userId, items, paymentIntentId) => {
   const agregados = [];
@@ -20,64 +12,57 @@ const registrarCompraUsuario = async (userId, items, paymentIntentId) => {
   );
 
   if (!result) {
+    console.log("⚠️ Este PaymentIntent ya fue procesado anteriormente");
     return { agregados: [], yaTenia: [], yaProcesado: true };
   }
 
+  console.log("🧾 Ítems recibidos:", items);
+
   for (let item of items) {
+    console.log("🔍 Analizando item:", item);
+
+    if (!item || !item.id || !item.type) {
+      console.warn("❗ Item inválido detectado:", item);
+      continue;
+    }
+
     const itemId = item.id.toString();
 
+    const estado = actualizarCompraConExpiracion(result, item.type, itemId);
+    console.log(`🔁 Resultado de actualizarCompraConExpiracion para ${item.type} ${itemId}:`, estado);
+
+    if (estado === "agregado" || estado === "renovado") {
+      agregados.push(item);
+    } else if (estado === "ya_vigente") {
+      yaTenia.push(item);
+    }
+
+        const tipoTraducido =
+      item.type === "course"
+        ? "curso"
+        : item.type === "formation"
+        ? "formacion"
+        : item.type;
+
     const yaAceptado = result.aceptacionTerminos.some(
-      (r) => r.itemId.toString() === itemId && r.tipo === item.type
+      (r) => r.itemId.toString() === itemId && r.tipo === tipoTraducido
     );
 
-    if (item.type === "course") {
-      const yaComprado = result.cursosComprados.some(
-        (c) => c.courseId.toString() === itemId
-      );
-      if (!yaComprado) {
-        result.cursosComprados.push({
-          courseId: item.id,
-          fechaExpiracion: calcularFechaExpiracion(6),
-        });
-        agregados.push(item);
-        if (!yaAceptado) {
-          result.aceptacionTerminos.push({
-            tipo: "curso",
-            itemId: item.id,
-            aceptado: true,
-            fecha: new Date(),
-          });
-        }
-      } else {
-        yaTenia.push(item);
-      }
+    if (!yaAceptado) {
+      console.log("📝 Registrando aceptación de términos para:", itemId);
+      result.aceptacionTerminos.push({
+        tipo: tipoTraducido,
+        itemId: item.id,
+        aceptado: true,
+        fecha: new Date(),
+      });
     }
 
-    if (item.type === "formation") {
-      const yaComprado = result.formacionesCompradas.some(
-        (f) => f.formationId.toString() === itemId
-      );
-      if (!yaComprado) {
-        result.formacionesCompradas.push({
-          formationId: item.id,
-          fechaExpiracion: calcularFechaExpiracion(6),
-        });
-        agregados.push(item);
-        if (!yaAceptado) {
-          result.aceptacionTerminos.push({
-            tipo: "formacion",
-            itemId: item.id,
-            aceptado: true,
-            fecha: new Date(),
-          });
-        }
-      } else {
-        yaTenia.push(item);
-      }
-    }
   }
 
   await result.save();
+  console.log("✅ Compra registrada con éxito:", { agregados, yaTenia });
+
   return { agregados, yaTenia, yaProcesado: false };
 };
 

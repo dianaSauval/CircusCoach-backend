@@ -263,9 +263,16 @@ const comprarCurso = async (req, res) => {
     }
 
     if (!yaAceptado) {
+      const tipoTraducido =
+        item.type === "course"
+          ? "curso"
+          : item.type === "formation"
+          ? "formacion"
+          : item.type;
+
       user.aceptacionTerminos.push({
-        tipo: "curso",
-        itemId: courseId,
+        tipo: tipoTraducido,
+        itemId: item.id,
         aceptado: true,
         fecha: new Date(),
       });
