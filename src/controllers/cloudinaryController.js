@@ -4,6 +4,8 @@ const Class = require("../models/Class");
 const User = require("../models/User");
 const Module = require("../models/Module");
 const Formation = require("../models/Formation");
+const CourseClass = require("../models/CourseClass");
+const Course = require("../models/Course");
 
 const multer = require("multer");
 
@@ -277,5 +279,60 @@ exports.obtenerPdfPrivado = async (req, res) => {
   } catch (err) {
     console.error("❌ Error en el servidor:", err.message);
     res.status(500).json({ error: "Error en el servidor" });
+  }
+};
+
+
+exports.obtenerPdfPrivadoCurso = async (req, res) => {
+  const userId = req.user.id;
+  const { classId, pdfIndex, lang } = req.params;
+
+  console.log("📡 Solicitud para PDF privado de CURSO recibida:", {
+    userId,
+    classId,
+    pdfIndex,
+    lang,
+  });
+
+  try {
+    const clase = await CourseClass.findById(classId);
+    if (!clase) {
+      console.warn("⚠️ Clase de curso no encontrada:", classId);
+      return res.status(404).json({ error: "Clase no encontrada" });
+    }
+
+    const courseId = clase.course;
+    if (!courseId) {
+      console.warn("⚠️ No se encontró curso asociado a la clase");
+      return res.status(404).json({ error: "Curso no asociado" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(403).json({ error: "Usuario no encontrado" });
+    }
+
+    const haComprado = user.cursosComprados.some(
+      (compra) => compra.courseId.toString() === courseId.toString()
+    );
+
+    if (!haComprado && user.role !== "admin") {
+      console.warn("⛔ Acceso denegado. No compró el curso.");
+      return res.status(403).json({ error: "No compraste este curso" });
+    }
+
+    const pdfData = clase.pdfs?.[pdfIndex];
+    const pdfUrl = pdfData?.url?.[lang];
+
+    if (!pdfUrl) {
+      console.warn("❌ URL del PDF no encontrada para ese idioma o índice");
+      return res.status(404).json({ error: "PDF no encontrado" });
+    }
+
+    console.log("✅ PDF autorizado y encontrado:", pdfUrl);
+    return res.json({ url: pdfUrl });
+  } catch (err) {
+    console.error("❌ Error al obtener PDF privado de curso:", err.message);
+    res.status(500).json({ error: "Error interno" });
   }
 };
