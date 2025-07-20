@@ -5,7 +5,6 @@ const User = require("../models/User");
 const Module = require("../models/Module");
 const Formation = require("../models/Formation");
 
-
 const multer = require("multer");
 
 const imageStorage = multer.diskStorage({
@@ -253,10 +252,16 @@ exports.obtenerPdfPrivado = async (req, res) => {
       return res.json({ url: pdfUrl });
     }
 
-    const haComprado = user.formacionesCompradas.some((id) =>
-      id.equals(formationId)
+    const haComprado = user.formacionesCompradas.some(
+      (compra) => compra.formationId.toString() === formationId.toString()
     );
+
     console.log("🧾 ¿Compró la formación?", haComprado);
+    console.log("🔎 Formation ID desde la clase:", formationId.toString());
+    console.log(
+      "🎯 IDs de formaciones compradas:",
+      user.formacionesCompradas.map((f) => f.formationId.toString())
+    );
 
     if (!haComprado) {
       console.warn("⛔ Acceso denegado. No compró la formación.");
