@@ -6,6 +6,7 @@ const Class = require("../models/Class");
 const User = require("../models/User");
 const Module = require("../models/Module");
 const Formation = require("../models/Formation");
+const CourseClass = require("../models/CourseClass");
 
 const VIMEO_TOKEN = process.env.VIMEO_TOKEN;
 
@@ -104,24 +105,36 @@ exports.uploadVideoConPrivacidad = async (
     fs.unlinkSync(file.path); // 🧹 Limpieza
 
     // 🔧 3. Forzar configuración final (por si no aplicó bien al crear)
-    await axios.patch(
-      `https://api.vimeo.com${videoUri}`,
-      {
-        privacy: {
-          view: privacy,
-          embed: embed,
-          download: false,
-          add: false,
-        },
-        ...(domainWhitelist.length > 0 && { embed_domains: domainWhitelist }),
+    // 🔧 3. Forzar configuración final (por si no aplicó bien al crear)
+    const patchPayload = {
+      privacy: {
+        view: privacy,
+        embed: embed,
+        download: false,
+        add: false,
       },
-      {
-        headers: {
-          Authorization: `Bearer ${VIMEO_TOKEN}`,
-          "Content-Type": "application/json",
+      embed: {
+        buttons: {
+          like: false,
+          watchlater: false,
+          share: false,
+          embed: false,
         },
-      }
+      },
+      ...(domainWhitelist.length > 0 && { embed_domains: domainWhitelist }),
+    };
+
+    console.log(
+      "🛠 PATCH forzado a Vimeo con:",
+      JSON.stringify(patchPayload, null, 2)
     );
+
+    await axios.patch(`https://api.vimeo.com${videoUri}`, patchPayload, {
+      headers: {
+        Authorization: `Bearer ${VIMEO_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    });
 
     // ✅ 4. Respuesta final con URL del video
     const finalVideoUrl = `https://vimeo.com${videoUri.replace("/videos", "")}`;
@@ -195,24 +208,32 @@ exports.deleteFromVimeo = async (req, res) => {
 exports.getVimeoStatus = async (req, res) => {
   const videoId = req.params.videoId;
 
-  try {
-    const response = await axios.get(
-      `https://api.vimeo.com/videos/${videoId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${VIMEO_TOKEN}`,
-        },
-      }
-    );
+  console.log("🔍 Consultando estado del video en Vimeo:", videoId);
 
-    const status = response.data.status; // 'available', etc.
+  try {
+    const url = `https://api.vimeo.com/videos/${videoId}`;
+    console.log("📡 GET a:", url);
+
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${VIMEO_TOKEN}`,
+      },
+    });
+
+    const status = response.data.status; // 'available', 'uploading', etc.
+    console.log("✅ Estado recibido:", status);
+
     res.json({ status });
   } catch (error) {
-    console.error(
-      "Error consultando estado del video:",
-      error.response?.data || error.message
-    );
-    res.status(500).json({ error: "Error consultando estado del video" });
+    console.error("❌ Error consultando estado del video:", {
+      status: error.response?.status,
+      message: error.response?.data || error.message,
+    });
+
+    res.status(500).json({
+      error: "Error consultando estado del video",
+      vimeoError: error.response?.data || error.message,
+    });
   }
 };
 
@@ -236,45 +257,82 @@ exports.obtenerVideoPrivado = async (req, res) => {
   const userId = req.user.id;
   const { classId, videoIndex, lang } = req.params;
 
+  console.log("🎥 Solicitud para video privado recibida:", {
+    userId,
+    classId,
+    videoIndex,
+    lang,
+  });
+
   try {
-    const clase = await Class.findById(classId).populate("module");
-    if (!clase) return res.status(404).json({ error: "Clase no encontrada" });
-
-    const modulo = clase.module;
-    if (!modulo) return res.status(404).json({ error: "Módulo no encontrado" });
-
-    const formationId = modulo.formation;
-    if (!formationId)
-      return res.status(404).json({ error: "Formación no encontrada" });
-
     const user = await User.findById(userId);
     if (!user) return res.status(403).json({ error: "Usuario no encontrado" });
 
-    const videoData = clase.videos?.[videoIndex];
-    const videoUrl = videoData?.url?.[lang];
+    // 🔍 1. Intentar encontrar en formación
+    let clase = await Class.findById(classId).populate("module");
+    let tipo = "formacion";
+    let videoUrl = null;
+    let accesoValido = false;
+
+    if (clase) {
+      const modulo = clase.module;
+      const formationId = modulo?.formation;
+      const videoData = clase.videos?.[videoIndex];
+      videoUrl = videoData?.url?.[lang];
+
+      if (
+        user.role === "admin" ||
+        user.formacionesCompradas.some(
+          (f) => f.formationId.toString() === formationId?.toString()
+        )
+      ) {
+        accesoValido = true;
+      }
+    }
+
+    // 🔍 2. Si no existe como formación, buscar como clase de curso
+    if (!clase || !videoUrl) {
+      clase = await CourseClass.findById(classId);
+      tipo = "curso";
+      const videoData = clase?.videos?.[videoIndex];
+      videoUrl = videoData?.url?.[lang];
+
+      if (clase && user.role === "admin") {
+        accesoValido = true;
+      }
+
+      if (clase && !accesoValido) {
+        const cursoComprado = user.cursosComprados.some(
+          (c) => c.courseId.toString() === clase.course?.toString()
+        );
+        accesoValido = cursoComprado;
+      }
+    }
+
+    if (!clase) {
+      console.warn("⚠️ Clase no encontrada:", classId);
+      return res.status(404).json({ error: "Clase no encontrada" });
+    }
 
     if (!videoUrl) {
+      console.warn("⚠️ Video no encontrado en idioma o índice", {
+        videoIndex,
+        lang,
+      });
       return res
         .status(404)
         .json({ error: "Video no encontrado en ese idioma o índice" });
     }
 
-    // Admins pueden acceder directamente
-    if (user.role === "admin") {
-      return res.json({ url: videoUrl });
+    if (!accesoValido) {
+      console.warn("❌ Usuario no tiene acceso a este video");
+      return res.status(403).json({ error: `No compraste esta ${tipo}` });
     }
 
-    const haComprado = user.formacionesCompradas.some((id) =>
-      id.equals(formationId)
-    );
-
-    if (!haComprado) {
-      return res.status(403).json({ error: "No compraste esta formación" });
-    }
-
+    console.log(`✅ Usuario tiene acceso al video (${tipo})`);
     return res.json({ url: videoUrl });
   } catch (err) {
-    console.error("❌ Error al obtener video privado:", err.message);
-    res.status(500).json({ error: "Error en el servidor" });
+    console.error("❌ Error en obtenerVideoPrivado:", err);
+    return res.status(500).json({ error: "Error en el servidor" });
   }
 };
