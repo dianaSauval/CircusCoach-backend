@@ -42,10 +42,10 @@ exports.uploadVideoConPrivacidad = async (
     const domainWhitelist =
       embed === "whitelist"
         ? [
-            "localhost:5173",
-            "127.0.0.1:5173",
-            "mycircuscoach.com",
-            "www.mycircuscoach.com",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "https://mycircuscoach.com",
+            "https://www.mycircuscoach.com",
           ]
         : [];
 
