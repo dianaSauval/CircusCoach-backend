@@ -173,9 +173,9 @@ exports.uploadVideoConPrivacidad = async (
     console.log(JSON.stringify(videoInfo.data, null, 2));
 
     // ✅ 4. Respuesta final con URL del video
-    const finalVideoUrl = `https://vimeo.com${videoUri.replace("/videos", "")}`;
-    console.log(`✅ Video subido correctamente: ${finalVideoUrl}`);
-    res.json({ url: finalVideoUrl });
+    const finalEmbedUrl = videoInfo.data.player_embed_url;
+    console.log(`✅ Video subido correctamente: ${finalEmbedUrl}`);
+    res.json({ url: finalEmbedUrl });
   } catch (err) {
     console.error(
       "❌ Error al subir video:",
