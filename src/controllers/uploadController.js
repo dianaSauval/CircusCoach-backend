@@ -90,6 +90,33 @@ exports.uploadVideoConPrivacidad = async (
     const videoUri = createRes.data.uri;
     const uploadLink = createRes.data.upload.upload_link;
 
+    const videoUrl = `https://api.vimeo.com${videoUri}`;
+    let estadoVideo = "";
+    let intentos = 0;
+
+    // 🕐 Declarar delay antes de usarlo
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    while (estadoVideo !== "available" && intentos < 20) {
+      const info = await axios.get(videoUrl, {
+        headers: { Authorization: `Bearer ${VIMEO_TOKEN}` },
+      });
+
+      estadoVideo = info.data.status;
+      console.log(
+        `🔄 Estado del video: ${estadoVideo} (intento ${intentos + 1})`
+      );
+
+      if (estadoVideo !== "available") {
+        await delay(3000); // Espera 3 segundos
+        intentos++;
+      }
+    }
+
+    if (estadoVideo !== "available") {
+      console.warn("⚠️ El video no llegó a estar disponible a tiempo");
+    }
+
     // ⬆️ 2. Subir el archivo binario al link de upload
     const buffer = fs.readFileSync(file.path);
     await axios.patch(uploadLink, buffer, {
@@ -104,8 +131,7 @@ exports.uploadVideoConPrivacidad = async (
 
     fs.unlinkSync(file.path); // 🧹 Limpieza
 
-    // 🔧 3. Forzar configuración final (por si no aplicó bien al crear)
-    // 🔧 3. Forzar configuración final (por si no aplicó bien al crear)
+    // 🔧 3. PATCH final para forzar privacidad y dominios
     const patchPayload = {
       privacy: {
         view: privacy,
@@ -135,6 +161,16 @@ exports.uploadVideoConPrivacidad = async (
         "Content-Type": "application/json",
       },
     });
+
+    // ✅ Verificar estado real del video después del PATCH
+    const videoInfo = await axios.get(`https://api.vimeo.com${videoUri}`, {
+      headers: {
+        Authorization: `Bearer ${VIMEO_TOKEN}`,
+      },
+    });
+
+    console.log("🔎 Estado actual del video después del PATCH:");
+    console.log(JSON.stringify(videoInfo.data, null, 2));
 
     // ✅ 4. Respuesta final con URL del video
     const finalVideoUrl = `https://vimeo.com${videoUri.replace("/videos", "")}`;
