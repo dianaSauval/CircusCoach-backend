@@ -68,7 +68,7 @@ exports.uploadVideoConPrivacidad = async (
           embed: false,
         },
       },
-      ...(domainWhitelist.length > 0 && { embed_domains: domainWhitelist }),
+     domains: domainWhitelist, // 👈 esta es la clave
     };
 
     // 🔍 Log para ver la config exacta
