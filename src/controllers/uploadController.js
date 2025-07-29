@@ -68,7 +68,7 @@ exports.uploadVideoConPrivacidad = async (
           embed: false,
         },
       },
-     domains: domainWhitelist, // 👈 esta es la clave
+      domains: domainWhitelist, // 👈 esta es la clave
     };
 
     // 🔍 Log para ver la config exacta
@@ -305,7 +305,8 @@ exports.obtenerVideoPrivado = async (req, res) => {
     if (!user) return res.status(403).json({ error: "Usuario no encontrado" });
 
     // 🔍 1. Intentar encontrar en formación
-    let clase = await Class.findById(classId).populate("module");
+    let clase = await Class.findById(classId);
+    if (clase) await clase.populate("module");
     let tipo = "formacion";
     let videoUrl = null;
     let accesoValido = false;
@@ -327,7 +328,7 @@ exports.obtenerVideoPrivado = async (req, res) => {
     }
 
     // 🔍 2. Si no existe como formación, buscar como clase de curso
-    if (!clase || !videoUrl) {
+    if (!clase || typeof videoUrl !== "string") {
       clase = await CourseClass.findById(classId);
       tipo = "curso";
       const videoData = clase?.videos?.[videoIndex];
