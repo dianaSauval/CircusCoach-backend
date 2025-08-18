@@ -24,61 +24,45 @@ exports.uploadVideoMiddleware = upload.single("file");
 exports.uploadVideoConPrivacidad = async (
   req,
   res,
-  privacy = "unlisted",
+  view = "nobody",
   embed = "whitelist"
 ) => {
   const file = req.file;
   const { title, description } = req.body;
-
-  if (!file) {
+  if (!file)
     return res.status(400).json({ error: "Archivo de video requerido" });
-  }
 
   try {
     const stats = fs.statSync(file.path);
     const size = stats.size;
 
-    // Whitelist solo si se indica
-    const domainWhitelist =
-      embed === "whitelist"
-        ? [
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "https://mycircuscoach.com",
-            "https://www.mycircuscoach.com",
-          ]
-        : [];
+    const whitelist = [
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "https://mycircuscoach.com",
+      "https://www.mycircuscoach.com",
+    ];
 
-    // 🎛 Configuración para subir video
-    const vimeoPayload = {
+    // 1) Crear el contenedor del video
+    const createPayload = {
       upload: { approach: "tus", size },
       name: title,
       description,
       privacy: {
-        view: privacy, // "anybody" o "unlisted"
-        embed: embed, // "public" o "whitelist"
+        view, // "nobody" para que NO exista página pública
+        embed, // "whitelist" para limitar el embed
         download: false,
         add: false,
       },
       embed: {
-        buttons: {
-          like: false,
-          watchlater: false,
-          share: false,
-          embed: false,
-        },
+        buttons: { like: false, watchlater: false, share: false, embed: false },
       },
-      domains: domainWhitelist, // 👈 esta es la clave
+      embed_domains: embed === "whitelist" ? whitelist : undefined,
     };
 
-    // 🔍 Log para ver la config exacta
-    console.log("🎥 Subiendo video con configuración:");
-    console.log(JSON.stringify(vimeoPayload, null, 2));
-
-    // 📡 1. Crear video en Vimeo
     const createRes = await axios.post(
       "https://api.vimeo.com/me/videos",
-      vimeoPayload,
+      createPayload,
       {
         headers: {
           Authorization: `Bearer ${VIMEO_TOKEN}`,
@@ -87,113 +71,99 @@ exports.uploadVideoConPrivacidad = async (
       }
     );
 
-    const videoUri = createRes.data.uri;
+    const videoUri = createRes.data.uri; // e.g. "/videos/123456789"
     const uploadLink = createRes.data.upload.upload_link;
 
-    const videoUrl = `https://api.vimeo.com${videoUri}`;
-    let estadoVideo = "";
-    let intentos = 0;
-
-    // 🕐 Declarar delay antes de usarlo
-    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    while (estadoVideo !== "available" && intentos < 20) {
-      const info = await axios.get(videoUrl, {
-        headers: { Authorization: `Bearer ${VIMEO_TOKEN}` },
-      });
-
-      estadoVideo = info.data.status;
-      console.log(
-        `🔄 Estado del video: ${estadoVideo} (intento ${intentos + 1})`
-      );
-
-      if (estadoVideo !== "available") {
-        await delay(3000); // Espera 3 segundos
-        intentos++;
-      }
-    }
-
-    if (estadoVideo !== "available") {
-      console.warn("⚠️ El video no llegó a estar disponible a tiempo");
-    }
-
-    // ⬆️ 2. Subir el archivo binario al link de upload
+    // 2) Subir el binario por TUS
     const buffer = fs.readFileSync(file.path);
     await axios.patch(uploadLink, buffer, {
       headers: {
-        Authorization: `Bearer ${VIMEO_TOKEN}`,
-        "Content-Type": "application/offset+octet-stream",
-        "Content-Length": size,
-        "Upload-Offset": 0,
         "Tus-Resumable": "1.0.0",
+        "Upload-Offset": 0,
+        "Content-Type": "application/offset+octet-stream",
+        "Content-Length": buffer.length,
       },
     });
 
-    fs.unlinkSync(file.path); // 🧹 Limpieza
+    fs.unlinkSync(file.path); // limpiar archivo temporal
 
-    // 🔧 3. PATCH final para forzar privacidad y dominios
-    const patchPayload = {
-      privacy: {
-        view: privacy,
-        embed: embed,
-        download: false,
-        add: false,
-      },
-      embed: {
-        buttons: {
-          like: false,
-          watchlater: false,
-          share: false,
-          embed: false,
-        },
-      },
-      ...(domainWhitelist.length > 0 && { embed_domains: domainWhitelist }),
-    };
+    // 3) Poll de procesamiento hasta "available"
+    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+    let status = "uploading";
+    let tries = 0;
 
-    console.log(
-      "🛠 PATCH forzado a Vimeo con:",
-      JSON.stringify(patchPayload, null, 2)
-    );
+    while (status !== "available" && tries < 40) {
+      // ~2 min máx
+      const info = await axios.get(`https://api.vimeo.com${videoUri}`, {
+        headers: { Authorization: `Bearer ${VIMEO_TOKEN}` },
+      });
+      status = info.data.status; // "uploading" | "transcoding" | "available"
+      if (status === "available") {
+        // 4) PATCH de refuerzo de privacidad/whitelist (opcional pero útil)
+        await axios.patch(
+          `https://api.vimeo.com${videoUri}`,
+          {
+            privacy: { view, embed, download: false, add: false },
+            embed: {
+              buttons: {
+                like: false,
+                watchlater: false,
+                share: false,
+                embed: false,
+              },
+            },
+            embed_domains: embed === "whitelist" ? whitelist : undefined,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${VIMEO_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
 
-    await axios.patch(`https://api.vimeo.com${videoUri}`, patchPayload, {
-      headers: {
-        Authorization: `Bearer ${VIMEO_TOKEN}`,
-        "Content-Type": "application/json",
-      },
+        // traer datos definitivos
+        const finalInfo = await axios.get(`https://api.vimeo.com${videoUri}`, {
+          headers: { Authorization: `Bearer ${VIMEO_TOKEN}` },
+        });
+
+        // IMPORTANTE: no expongas la página de Vimeo (vimeo.com/ID/...)
+        const id = finalInfo.data.uri.split("/").pop();
+        const playerUrl = `https://player.vimeo.com/video/${id}`; // no necesita hash con whitelist
+
+        return res.json({
+          id,
+          url: playerUrl,
+          player_embed_url: finalInfo.data.player_embed_url,
+        });
+      }
+
+      await delay(3000);
+      tries++;
+    }
+
+    return res.status(202).json({
+      // si no llegó a available a tiempo
+      id: videoUri.split("/").pop(),
+      status,
+      message: "El video sigue procesando. Reintenta en unos segundos.",
     });
-
-    // ✅ Verificar estado real del video después del PATCH
-    const videoInfo = await axios.get(`https://api.vimeo.com${videoUri}`, {
-      headers: {
-        Authorization: `Bearer ${VIMEO_TOKEN}`,
-      },
-    });
-
-    console.log("🔎 Estado actual del video después del PATCH:");
-    console.log(JSON.stringify(videoInfo.data, null, 2));
-
-    // ✅ 4. Respuesta final con URL del video
-    const finalEmbedUrl = videoInfo.data.player_embed_url;
-    console.log(`✅ Video subido correctamente: ${finalEmbedUrl}`);
-    res.json({ url: finalEmbedUrl });
   } catch (err) {
     console.error(
       "❌ Error al subir video:",
       err.response?.data || err.message
     );
-    res.status(500).json({ error: "Error al subir video" });
+    return res.status(500).json({ error: "Error al subir video" });
   }
 };
 
 // 🔸 Subida de video PROMOCIONAL (público, visible en Vimeo y embebible en cualquier sitio)
-exports.uploadPromotionalVideo = async (req, res) => {
-  return exports.uploadVideoConPrivacidad(req, res, "anybody", "public");
-};
+exports.uploadPromotionalVideo = (req, res) =>
+  exports.uploadVideoConPrivacidad(req, res, "anybody", "public");
 
 // 🔸 Subida de video PRIVADO (solo embebido en tu web, no visible en Vimeo)
-exports.uploadPrivateVideo = async (req, res) => {
-  return exports.uploadVideoConPrivacidad(req, res, "unlisted", "whitelist");
-};
+exports.uploadPrivateVideo = (req, res) =>
+  exports.uploadVideoConPrivacidad(req, res, "nobody", "whitelist");
 
 // 🔹 Eliminar video por ID
 exports.deleteFromVimeoById = async (videoId) => {
