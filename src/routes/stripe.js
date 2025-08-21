@@ -15,7 +15,7 @@ router.post("/crear-sesion", authMiddleware, async (req, res) => {
 
     const lineItems = items.map((item) => ({
       price_data: {
-        currency: "usd",
+        currency: "eur",
         product_data: {
           name: item.title?.es || "Producto",
         },
