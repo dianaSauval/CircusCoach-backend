@@ -1,10 +1,37 @@
 const Discount = require("../models/Discount");
 
+// Normaliza payload: fechas inclusivas y targetIds desde targetItems
+const normalizeDiscountPayload = (payload = {}) => {
+  const body = { ...payload };
+
+  // Derivar targetIds desde targetItems para tener ambas opciones
+  if (Array.isArray(body.targetItems)) {
+    body.targetIds = body.targetItems
+      .map(it => it?._id)
+      .filter(Boolean);
+  }
+
+  // Fechas: inicio a 00:00 y fin a 23:59:59.999 (día inclusivo)
+  if (body.startDate) {
+    const s = new Date(body.startDate);
+    s.setHours(0, 0, 0, 0);
+    body.startDate = s;
+  }
+  if (body.endDate) {
+    const e = new Date(body.endDate);
+    e.setHours(23, 59, 59, 999);
+    body.endDate = e;
+  }
+
+  return body;
+};
+
+
 // 🟢 Crear un nuevo bono
 exports.createDiscount = async (req, res) => {
   try {
-    const nuevoBono = new Discount(req.body);
-    await nuevoBono.save();
+    const body = normalizeDiscountPayload(req.body);
+    const nuevoBono = await Discount.create(body);
     res.status(201).json(nuevoBono);
   } catch (error) {
     res.status(500).json({ message: "Error al crear el bono", error });
@@ -14,17 +41,15 @@ exports.createDiscount = async (req, res) => {
 // 🟡 Editar un bono existente
 exports.updateDiscount = async (req, res) => {
   try {
-    const updated = await Discount.findByIdAndUpdate(req.params.id, req.body, {
-      new: true
-    });
-    if (!updated) {
-      return res.status(404).json({ message: "Bono no encontrado" });
-    }
+    const body = normalizeDiscountPayload(req.body);
+    const updated = await Discount.findByIdAndUpdate(req.params.id, body, { new: true });
+    if (!updated) return res.status(404).json({ message: "Bono no encontrado" });
     res.json(updated);
   } catch (error) {
     res.status(500).json({ message: "Error al actualizar el bono", error });
   }
 };
+
 
 // 🔴 Eliminar un bono
 exports.deleteDiscount = async (req, res) => {
