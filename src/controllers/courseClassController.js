@@ -110,7 +110,6 @@ exports.deleteCourseClass = async (req, res) => {
         url.includes("cloudinary.com")
       );
 
-      console.log("🔗 URLs detectadas en PDF:", urls);
 
       const publicIds = urls
         .map((url) => {

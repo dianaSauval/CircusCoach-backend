@@ -44,7 +44,6 @@ const getClassesByModule = async (req, res) => {
 
     const classes = await Class.find(query);
 
-    console.log("📤 Clases encontradas:", classes);
 
     res.status(200).json(classes);
   } catch (error) {
@@ -60,7 +59,7 @@ const createClass = async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "No autorizado" });
 
   try {
-    console.log("📩 Datos recibidos en el backend:", req.body);
+   
 
     const {
       title,

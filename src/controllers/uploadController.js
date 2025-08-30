@@ -187,7 +187,7 @@ exports.deleteFromVimeoById = async (videoId) => {
 // 🔹 Eliminar video desde URL
 exports.deleteFromVimeo = async (req, res) => {
   const videoUrl = typeof req.body === "string" ? req.body : req.body.videoUrl;
-  console.log("🔍 URL recibida:", videoUrl);
+ 
 
   if (!videoUrl) {
     return res.status(400).json({ error: "URL del video requerida" });
@@ -218,7 +218,7 @@ exports.getVimeoStatus = async (req, res) => {
 
   try {
     const url = `https://api.vimeo.com/videos/${videoId}`;
-    console.log("📡 GET a:", url);
+   
 
     const response = await axios.get(url, {
       headers: {

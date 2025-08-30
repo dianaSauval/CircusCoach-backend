@@ -124,8 +124,7 @@ exports.deleteArchivoCloudinary = async (public_id, resource_type = "raw") => {
     const result = await cloudinary.uploader.destroy(public_id, {
       resource_type,
     });
-    console.log("📤 Respuesta de Cloudinary:", result);
-
+  
     if (result.result !== "ok") {
       console.warn(
         `⚠️ Cloudinary no eliminó el archivo: ${public_id} (resultado: ${result.result})`
@@ -215,8 +214,6 @@ exports.obtenerPdfPrivado = async (req, res) => {
       return res.status(404).json({ error: "Clase no encontrada" });
     }
 
-    console.log("✅ Clase encontrada:", clase.title?.es || clase._id);
-    console.log("📄 PDFs disponibles:", clase.pdfs?.length);
 
     const modulo = clase.module;
     if (!modulo) {
