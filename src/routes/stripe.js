@@ -105,11 +105,16 @@ router.post("/crear-payment-intent", async (req, res) => {
   try {
     const { items } = req.body;
     const total = items.reduce((sum, item) => sum + item.price, 0);
-
+    // total en centavos y con validación defensiva
+    const amount = Math.round(Number(total) * 100);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: "Monto inválido" });
+    }
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(total * 100),
+      amount,
       currency: "eur",
-      payment_method_types: ["card", "klarna", "eps", "giropay", "bancontact"],
+      // ✅ Deja que Stripe habilite solo lo disponible en tu cuenta
+      automatic_payment_methods: { enabled: true },
       metadata: {
         userId: "id-mockeado", // si tenés el real, reemplazalo en producción
         items: JSON.stringify(
@@ -156,10 +161,11 @@ router.post(
       }
 
       // 1) Registrar compra (con deduplicación por paymentIntentId)
+      // ✅ Usa el ID real del intent para deduplicar
       const { agregados, yaTenia, yaProcesado } = await registrarCompraUsuario(
         req.user.id,
         items,
-        paymentIntentId
+        intent.id
       );
 
       if (yaProcesado) {
