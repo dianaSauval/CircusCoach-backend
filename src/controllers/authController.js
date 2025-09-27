@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
-const { sendRecoveryEmail } = require("../utils/emailService");
+const { sendRecoveryEmail } = require("../utils/sendRecoveryEmail");
 
 
 

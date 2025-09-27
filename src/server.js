@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -7,16 +8,16 @@ dotenv.config();
 connectDB();
 
 const app = express();
-app.use(cors()); // Habilita CORS
+app.use(cors());
 
-// ⚠️ Webhook de Stripe debe ir antes de express.json()
-const stripeWebhook = require("./routes/stripeWebhook");
+// ⚠️ 1) Montar el webhook ANTES de express.json()
+const stripeWebhook = require("./routes/stripeWebhook"); // o "./routes/webhookRoutes", pero UNO solo
 app.use("/api/stripe", stripeWebhook);
 
-// Ahora sí va el middleware que parsea JSON
+// ✅ 2) Ahora sí, el parser JSON global
 app.use(express.json());
 
-// Importar rutas normales
+// ✅ 3) Rutas normales
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const formationRoutes = require("./routes/formationRoutes");
@@ -24,16 +25,14 @@ const moduleRoutes = require("./routes/moduleRoutes");
 const classRoutes = require("./routes/classRoutes");
 const courseRoutes = require("./routes/courseRoutes");
 const courseClassRoutes = require("./routes/courseClassRoutes");
-const presentialRoutes = require('./routes/presentialFormationsRoutes');
+const presentialRoutes = require("./routes/presentialFormationsRoutes");
 const pagosRoutes = require("./routes/pagosRoutes");
 const uploadRoutes = require("./routes/videoRoutes");
 const stripeRoutes = require("./routes/stripe");
 const cloudinaryRoutes = require("./routes/cloudinaryRoutes");
-const webhookRoutes = require("./routes/webhookRoutes");
 const discountRoutes = require("./routes/discountRoutes");
 
-
-// Configuración de rutas
+// ✅ 4) Mounts
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/formations", formationRoutes);
@@ -42,11 +41,10 @@ app.use("/api/classes", classRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/course-classes", courseClassRoutes);
 app.use("/api/presential-formations", presentialRoutes);
-app.use("/api/pagos", pagosRoutes); 
+app.use("/api/pagos", pagosRoutes);
 app.use("/api/upload", uploadRoutes);
-app.use("/api/stripe", stripeRoutes); // rutas como /crear-sesion
+app.use("/api/stripe", stripeRoutes); // /crear-sesion, /confirmar-compra, etc.
 app.use("/api/cloudinary", cloudinaryRoutes);
-app.use("/api/stripe", webhookRoutes);
 app.use("/api/discounts", discountRoutes);
 
 app.get("/", (req, res) => {

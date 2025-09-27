@@ -4,11 +4,14 @@ const Stripe = require("stripe");
 const router = express.Router();
 const { authMiddleware } = require("../middlewares/authMiddleware");
 const registrarCompraUsuario = require("../utils/registrarCompraUsuario");
-
 const User = require("../models/User");
+const sendPurchaseEmail = require("../utils/sendPurchaseEmail");
+const Course = require("../models/Course");
+const Formation = require("../models/Formation");
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// Crear sesión de Checkout
 router.post("/crear-sesion", authMiddleware, async (req, res) => {
   try {
     const { items } = req.body;
@@ -23,17 +26,18 @@ router.post("/crear-sesion", authMiddleware, async (req, res) => {
       },
       quantity: 1,
     }));
+
     const minimalItems = items.map((item) => ({
       id: item.id,
       type: item.type,
     }));
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: lineItems,
       mode: "payment",
       success_url: `${process.env.CLIENT_URL}/pago-exitoso?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.CLIENT_URL}/carrito`,
-
       metadata: {
         userId: req.user.id,
         items: JSON.stringify(minimalItems),
@@ -47,6 +51,9 @@ router.post("/crear-sesion", authMiddleware, async (req, res) => {
   }
 });
 
+// Confirmar compra (Checkout): SIN email aquí (lo maneja el webhook)
+// La usamos para dar feedback rápido al frontend y, si querés, también registrar.
+// Si preferís que SOLO el webhook registre, podés devolver 200 sin registrar aquí.
 router.get("/confirmar-compra", authMiddleware, async (req, res) => {
   const { session_id } = req.query;
 
@@ -70,9 +77,20 @@ router.get("/confirmar-compra", authMiddleware, async (req, res) => {
         .json({ success: false, error: "Usuario no encontrado" });
     }
 
-    // ✅ NUEVO: usar función reutilizable
-    const { agregados, yaTenia } = await registrarCompraUsuario(user, items);
+    // Opción A (recomendada): NO registrar aquí y dejar que el webhook sea la fuente de verdad.
+    // return res.json({ success: true, message: "Compra recibida. En breve se confirmará." });
 
+    // Opción B: Registrar aquí también para reflejar acceso inmediato (deduplicado por intent).
+    // Usamos payment_intent para deduplicar exactamente igual que en el webhook.
+    const paymentIntentId = session.payment_intent || session.id;
+
+    const { agregados, yaTenia } = await registrarCompraUsuario(
+      req.user.id,
+      items,
+      paymentIntentId
+    );
+
+    // No enviamos email aquí. El webhook lo hará.
     res.json({ success: true, agregados, yaTenia });
   } catch (error) {
     console.error("❌ Error al confirmar compra:", error);
@@ -82,10 +100,10 @@ router.get("/confirmar-compra", authMiddleware, async (req, res) => {
   }
 });
 
+// Crear PaymentIntent (Elements)
 router.post("/crear-payment-intent", async (req, res) => {
   try {
     const { items } = req.body;
-
     const total = items.reduce((sum, item) => sum + item.price, 0);
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -93,7 +111,7 @@ router.post("/crear-payment-intent", async (req, res) => {
       currency: "eur",
       payment_method_types: ["card", "klarna", "eps", "giropay", "bancontact"],
       metadata: {
-        userId: "id-mockeado", // si tenés el real, reemplazalo
+        userId: "id-mockeado", // si tenés el real, reemplazalo en producción
         items: JSON.stringify(
           items.map((i) => ({
             id: i.id,
@@ -110,22 +128,16 @@ router.post("/crear-payment-intent", async (req, res) => {
   }
 });
 
+// Confirmar PaymentIntent (Elements): SIN email aquí (puedes enviarlo aquí si quieres).
 router.post(
   "/confirmar-compra-payment-intent",
   authMiddleware,
   async (req, res) => {
     console.log("📩 Se recibió una solicitud para confirmar un PaymentIntent");
-    console.log("➡️ ID recibido:", req.body.paymentIntentId);
     try {
       const { paymentIntentId } = req.body;
 
       const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
-      console.log("💳 Método de pago usado:", intent.payment_method_types);
-      console.log(
-        "📄 Detalles del método de pago:",
-        intent.charges?.data?.[0]?.payment_method_details
-      );
-
       if (!intent || intent.status !== "succeeded") {
         return res.status(400).json({
           success: false,
@@ -136,7 +148,6 @@ router.post(
       const items = intent.metadata?.items
         ? JSON.parse(intent.metadata.items)
         : [];
-
       if (!items.length) {
         return res.status(400).json({
           success: false,
@@ -144,6 +155,7 @@ router.post(
         });
       }
 
+      // 1) Registrar compra (con deduplicación por paymentIntentId)
       const { agregados, yaTenia, yaProcesado } = await registrarCompraUsuario(
         req.user.id,
         items,
@@ -160,17 +172,84 @@ router.post(
         });
       }
 
-      console.log("✅ Compra registrada con éxito:", { agregados, yaTenia });
-      res.json({ success: true, agregados, yaTenia });
+      // 2) Construir "order" consultando la DB (no hay lineItems en PI)
+      const orderItems = [];
+      for (const it of items) {
+        let title = "Contenido digital",
+          price = 0,
+          type = it.type || "digital";
+        if (it.type === "course") {
+          const c = await Course.findById(it.id);
+          title = c?.title?.es || c?.title?.en || "Curso";
+          price = c?.price || 0;
+        } else if (it.type === "formation") {
+          const f = await Formation.findById(it.id);
+          title = f?.title?.es || f?.title?.en || "Formación";
+          price = f?.price || 0;
+        }
+        orderItems.push({ title, type, price, qty: 1 });
+      }
+
+      const subtotal = orderItems.reduce(
+        (s, i) => s + i.price * (i.qty || 1),
+        0
+      );
+      const shipping = 0;
+      const taxes = 0;
+      const total = subtotal + shipping + taxes;
+
+      // 3) Enviar email al comprador (NO BLOQUEANTE)
+      const user = await User.findById(req.user.id);
+
+      let emailSent = false;
+      try {
+        await sendPurchaseEmail({
+          to: user.email,
+          buyer: { name: user.name, surname: user.surname },
+          order: {
+            items: orderItems,
+            subtotal,
+            shipping,
+            taxes,
+            total,
+            deliveryOrAccessDate: "inmediata",
+          },
+          vendor: {
+            tradeName: "CircusCoach / Productions associées asbl",
+            vat: "BE 0896.755.397",
+            address: "rue Coenraets 72, 1060 Bruselas, Bélgica",
+            email: "circuscoachbyrociogarrote@gmail.com",
+            claimsEmail: "circuscoachbyrociogarrote@gmail.com",
+          },
+          policyLinks: {
+            termsUrl:
+              process.env.TERMS_URL || "https://www.mycircuscoach.com/terminos",
+          },
+        });
+        emailSent = true;
+        console.log(`✅ Email de confirmación (PI) enviado a ${user.email}`);
+      } catch (e) {
+        // ⚠️ Importante: NO hacemos return 500
+        console.error(
+          "⚠️ Falló el envío de email (PI):",
+          e.code,
+          e.response?.body || e.message
+        );
+      }
+
+      // Respondemos éxito igual; si falló el mail, avisamos al front
+      return res.json({ success: true, agregados, yaTenia, emailSent });
     } catch (error) {
-      console.error("❌ Error al confirmar payment intent:", error);
-      res.status(500).json({
+      console.error(
+        "❌ Error al confirmar payment intent (y enviar email):",
+        error
+      );
+      return res.status(500).json({
         success: false,
         error: "Error interno al confirmar la compra",
       });
     }
   }
 );
-
 
 module.exports = router;
