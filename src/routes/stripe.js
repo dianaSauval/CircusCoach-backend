@@ -38,6 +38,14 @@ router.post("/crear-sesion", authMiddleware, async (req, res) => {
       mode: "payment",
       success_url: `${process.env.CLIENT_URL}/pago-exitoso?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.CLIENT_URL}/carrito`,
+      payment_intent_data: {
+        statement_descriptor: "MYCIRCUSCOACH",
+        statement_descriptor_suffix: "COURSES",
+        payment_method_options: {
+          card: { request_three_d_secure: "automatic" },
+        },
+        metadata: { userId: req.user.id, items: JSON.stringify(minimalItems) },
+      },
       metadata: {
         userId: req.user.id,
         items: JSON.stringify(minimalItems),
@@ -115,6 +123,11 @@ router.post("/crear-payment-intent", async (req, res) => {
       currency: "eur",
       // ✅ Deja que Stripe habilite solo lo disponible en tu cuenta
       automatic_payment_methods: { enabled: true },
+      statement_descriptor: "MYCIRCUSCOACH",
+      statement_descriptor_suffix: "COURSES",
+      payment_method_options: {
+        card: { request_three_d_secure: "automatic" }, // SCA si el banco lo pide
+      },
       metadata: {
         userId: "id-mockeado", // si tenés el real, reemplazalo en producción
         items: JSON.stringify(
