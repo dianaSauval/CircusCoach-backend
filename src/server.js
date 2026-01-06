@@ -31,6 +31,8 @@ const uploadRoutes = require("./routes/videoRoutes");
 const stripeRoutes = require("./routes/stripe");
 const cloudinaryRoutes = require("./routes/cloudinaryRoutes");
 const discountRoutes = require("./routes/discountRoutes");
+const physicalProductRoutes = require("./routes/physicalProductRoutes");
+
 
 // ✅ 4) Mounts
 app.use("/api/auth", authRoutes);
@@ -46,6 +48,8 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/stripe", stripeRoutes); // /crear-sesion, /confirmar-compra, etc.
 app.use("/api/cloudinary", cloudinaryRoutes);
 app.use("/api/discounts", discountRoutes);
+app.use("/api/physical-products", physicalProductRoutes);
+
 
 app.get("/", (req, res) => {
   res.send("🚀 API de CircusCoach funcionando correctamente");
