@@ -267,8 +267,8 @@ const comprarCurso = async (req, res) => {
         item.type === "course"
           ? "curso"
           : item.type === "formation"
-          ? "formacion"
-          : item.type;
+            ? "formacion"
+            : item.type;
 
       user.aceptacionTerminos.push({
         tipo: tipoTraducido,
@@ -295,13 +295,15 @@ const getComprasDelUsuario = async (req, res) => {
     const userId = req.user.id;
     const user = await User.findById(userId)
       .populate("cursosComprados.courseId")
-      .populate("formacionesCompradas.formationId");
+      .populate("formacionesCompradas.formationId")
+      .populate("librosComprados.bookId");
 
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
     res.json({
       cursos: user.cursosComprados,
       formaciones: user.formacionesCompradas,
+      libros: user.librosComprados,
     });
   } catch (error) {
     console.error("❌ Error en getComprasDelUsuario:", error);

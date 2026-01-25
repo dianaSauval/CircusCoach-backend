@@ -8,6 +8,7 @@ const User = require("../models/User");
 const sendPurchaseEmail = require("../utils/sendPurchaseEmail");
 const Course = require("../models/Course");
 const Formation = require("../models/Formation");
+const Book = require("../models/Book");
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -20,7 +21,7 @@ router.post("/crear-sesion", authMiddleware, async (req, res) => {
       price_data: {
         currency: "eur",
         product_data: {
-          name: item.title?.es || "Producto",
+          name: item.title?.es || item.title || "Producto",
         },
         unit_amount: Math.round(item.price * 100),
       },
@@ -205,7 +206,12 @@ router.post(
           const f = await Formation.findById(it.id);
           title = f?.title?.es || f?.title?.en || "Formación";
           price = f?.price || 0;
+        } else if (it.type === "book") {
+          const b = await Book.findById(it.id);
+          title = b?.title || "Libro";
+          price = b?.price || 0;
         }
+
         orderItems.push({ title, type, price, qty: 1 });
       }
 

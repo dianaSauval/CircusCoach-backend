@@ -32,6 +32,8 @@ const stripeRoutes = require("./routes/stripe");
 const cloudinaryRoutes = require("./routes/cloudinaryRoutes");
 const discountRoutes = require("./routes/discountRoutes");
 const physicalProductRoutes = require("./routes/physicalProductRoutes");
+const bookRoutes = require("./routes/bookRoutes");
+
 
 
 // ✅ 4) Mounts
@@ -49,6 +51,8 @@ app.use("/api/stripe", stripeRoutes); // /crear-sesion, /confirmar-compra, etc.
 app.use("/api/cloudinary", cloudinaryRoutes);
 app.use("/api/discounts", discountRoutes);
 app.use("/api/physical-products", physicalProductRoutes);
+app.use("/api/books", bookRoutes);
+
 
 
 app.get("/", (req, res) => {

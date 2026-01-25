@@ -29,7 +29,10 @@ const registrarCompraUsuario = async (userId, items, paymentIntentId) => {
     const itemId = item.id.toString();
 
     const estado = actualizarCompraConExpiracion(result, item.type, itemId);
-    console.log(`🔁 Resultado de actualizarCompraConExpiracion para ${item.type} ${itemId}:`, estado);
+    console.log(
+      `🔁 Resultado de actualizarCompraConExpiracion para ${item.type} ${itemId}:`,
+      estado
+    );
 
     if (estado === "agregado" || estado === "renovado") {
       agregados.push(item);
@@ -37,12 +40,14 @@ const registrarCompraUsuario = async (userId, items, paymentIntentId) => {
       yaTenia.push(item);
     }
 
-        const tipoTraducido =
+    const tipoTraducido =
       item.type === "course"
         ? "curso"
         : item.type === "formation"
-        ? "formacion"
-        : item.type;
+          ? "formacion"
+          : item.type === "book"
+            ? "libro"
+            : item.type;
 
     const yaAceptado = result.aceptacionTerminos.some(
       (r) => r.itemId.toString() === itemId && r.tipo === tipoTraducido
@@ -57,7 +62,6 @@ const registrarCompraUsuario = async (userId, items, paymentIntentId) => {
         fecha: new Date(),
       });
     }
-
   }
 
   await result.save();

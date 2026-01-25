@@ -333,3 +333,33 @@ exports.obtenerPdfPrivadoCurso = async (req, res) => {
     res.status(500).json({ error: "Error interno" });
   }
 };
+
+// 📘 Subir PDF de libro (privado o público, pero en carpeta Libros)
+exports.uploadPdfLibro = async (req, res) => {
+  console.log("📥 Subiendo PDF de libro...");
+  const file = req.file;
+  const publicId = req.body.public_id;
+
+  if (!file) {
+    return res.status(400).json({ error: "Archivo PDF requerido" });
+  }
+
+  try {
+    const result = await cloudinary.uploader.upload(file.path, {
+      resource_type: "raw",
+      folder: "Libros", // ✅ carpeta específica
+      public_id: publicId,
+      use_filename: true,
+      unique_filename: false,
+      overwrite: true,
+    });
+
+    fs.unlinkSync(file.path);
+    console.log("✅ Subida de libro exitosa:", result.secure_url);
+
+    res.json({ url: result.secure_url, public_id: result.public_id });
+  } catch (error) {
+    console.error("❌ Error al subir PDF de libro:", error.message);
+    res.status(500).json({ error: "Error al subir PDF de libro" });
+  }
+};

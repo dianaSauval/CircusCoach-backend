@@ -22,6 +22,12 @@ const userSchema = new mongoose.Schema({
       fechaExpiracion: { type: Date, required: true },
     },
   ],
+  librosComprados: [
+    {
+      bookId: { type: mongoose.Schema.Types.ObjectId, ref: "Book" },
+      purchaseDate: { type: Date, default: Date.now }, // sin expiración
+    },
+  ],
 
   progresoCursos: [
     {
@@ -42,7 +48,7 @@ const userSchema = new mongoose.Schema({
   ],
   aceptacionTerminos: [
     {
-      tipo: { type: String, enum: ["curso", "formacion"], required: true },
+      tipo: { type: String, enum: ["curso", "formacion", "libro"], required: true },
       itemId: { type: mongoose.Schema.Types.ObjectId, required: true }, // Course o Formation
       aceptado: { type: Boolean, default: false },
       fecha: { type: Date, default: Date.now },

@@ -9,6 +9,7 @@ const {
   uploadImagenMiddleware,
   obtenerPdfPrivado,
   obtenerPdfPrivadoCurso,
+  uploadPdfLibro,
 } = require("../controllers/cloudinaryController");
 
 const uploadPdfMiddleware = require("../middlewares/pdfMulter");
@@ -22,6 +23,14 @@ router.post("/upload-pdf-privado", uploadPdfMiddleware, uploadPdfPrivado);
 
 // 📸 Subida de imagen de curso (tipo flyer)
 router.post("/upload-imagen-curso", uploadImagenMiddleware, uploadImagenCurso);
+
+// 📘 Subida de PDF de libro (admin)
+router.post(
+  "/upload-pdf-libro",
+  authMiddleware,
+  uploadPdfMiddleware,
+  uploadPdfLibro
+);
 
 // 🗑 Eliminación general de archivos (PDFs o imágenes)
 router.delete("/delete", deleteArchivo);
@@ -38,4 +47,4 @@ router.get(
   obtenerPdfPrivadoCurso
 );
 
-module.exports = router; 
+module.exports = router;
