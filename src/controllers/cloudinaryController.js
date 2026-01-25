@@ -334,7 +334,7 @@ exports.obtenerPdfPrivadoCurso = async (req, res) => {
   }
 };
 
-// 📘 Subir PDF de libro (privado o público, pero en carpeta Libros)
+// 📘 Subir PDF de libro
 exports.uploadPdfLibro = async (req, res) => {
   console.log("📥 Subiendo PDF de libro...");
   const file = req.file;
@@ -347,9 +347,9 @@ exports.uploadPdfLibro = async (req, res) => {
   try {
     const result = await cloudinary.uploader.upload(file.path, {
       resource_type: "raw",
-      folder: "Libros", // ✅ carpeta específica
+      folder: "Libros",
       public_id: publicId,
-      use_filename: true,
+      use_filename: false,
       unique_filename: false,
       overwrite: true,
     });
@@ -359,7 +359,23 @@ exports.uploadPdfLibro = async (req, res) => {
 
     res.json({ url: result.secure_url, public_id: result.public_id });
   } catch (error) {
-    console.error("❌ Error al subir PDF de libro:", error.message);
+    // ✅ limpiar siempre el temporal
+    try {
+      if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    } catch {}
+
+    const msg = String(error?.message || "");
+
+    // ✅ Cloudinary tamaño
+    if (msg.includes("supra el máximo") || msg.toLowerCase().includes("exceeds") || msg.toLowerCase().includes("maximum allowed")) {
+      return res.status(413).json({
+        error: "Cloudinary permite máximo 10 MB por PDF. Comprimí el archivo e intentá nuevamente.",
+        errorCode: "BOOK_PDF_TOO_LARGE_CLOUDINARY",
+        maxMb: 10,
+      });
+    }
+
+    console.error("❌ Error al subir PDF de libro:", msg);
     res.status(500).json({ error: "Error al subir PDF de libro" });
   }
 };

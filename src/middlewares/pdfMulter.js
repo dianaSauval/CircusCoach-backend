@@ -1,17 +1,36 @@
+// middlewares/uploadPdfMiddleware.js
 const multer = require("multer");
+
+const MAX_BOOK_PDF_MB = Number(process.env.MAX_BOOK_PDF_MB || 10);
+const MAX_BYTES = MAX_BOOK_PDF_MB * 1024 * 1024;
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    console.log("🟡 Destino multer:", file.originalname);
     cb(null, "uploads/");
   },
   filename: (req, file, cb) => {
-    const filename = Date.now() + "-" + file.originalname;
-    console.log("🟢 Nombre final del archivo:", filename);
-    cb(null, filename);
+    cb(null, Date.now() + "-" + file.originalname);
   },
 });
 
-const uploadPdfMiddleware = multer({ storage }).single("pdf");
+const fileFilter = (req, file, cb) => {
+  const isPdf =
+    file.mimetype === "application/pdf" ||
+    file.originalname.toLowerCase().endsWith(".pdf");
 
-module.exports = uploadPdfMiddleware;
+  if (!isPdf) {
+    const err = new Error("Solo se permiten archivos PDF");
+    err.code = "INVALID_PDF_TYPE";
+    return cb(err);
+  }
+
+  cb(null, true);
+};
+
+const uploadPdfMiddleware = multer({
+  storage,
+  limits: { fileSize: MAX_BYTES }, // ✅ ACÁ está la clave
+  fileFilter,
+}).single("pdf");
+
+module.exports = { uploadPdfMiddleware, MAX_BOOK_PDF_MB };
