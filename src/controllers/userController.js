@@ -98,7 +98,7 @@ const marcarClaseCurso = async (req, res) => {
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
     let curso = user.progresoCursos.find(
-      (p) => p.courseId.toString() === courseId
+      (p) => p.courseId.toString() === courseId,
     );
     if (!curso) {
       user.progresoCursos.push({ courseId, clasesCompletadas: [classId] });
@@ -128,11 +128,11 @@ const desmarcarClaseCurso = async (req, res) => {
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
     const progreso = user.progresoCursos.find(
-      (p) => p.courseId.toString() === courseId
+      (p) => p.courseId.toString() === courseId,
     );
     if (progreso) {
       progreso.clasesCompletadas = progreso.clasesCompletadas.filter(
-        (cid) => cid.toString() !== classId
+        (cid) => cid.toString() !== classId,
       );
     }
     await user.save();
@@ -156,7 +156,7 @@ const marcarClaseFormacion = async (req, res) => {
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
     let formacion = user.progresoFormaciones.find(
-      (p) => p.formationId.toString() === formationId
+      (p) => p.formationId.toString() === formationId,
     );
     if (!formacion) {
       user.progresoFormaciones.push({
@@ -189,11 +189,11 @@ const desmarcarClaseFormacion = async (req, res) => {
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
     const progreso = user.progresoFormaciones.find(
-      (p) => p.formationId.toString() === formationId
+      (p) => p.formationId.toString() === formationId,
     );
     if (progreso) {
       progreso.clasesCompletadas = progreso.clasesCompletadas.filter(
-        (cid) => cid.toString() !== classId
+        (cid) => cid.toString() !== classId,
       );
     }
     await user.save();
@@ -216,7 +216,7 @@ const obtenerProgresoFormacion = async (req, res) => {
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
     const progreso = user.progresoFormaciones.find(
-      (p) => p.formationId.toString() === formationId
+      (p) => p.formationId.toString() === formationId,
     );
     res.json(progreso || { formationId, clasesCompletadas: [] });
   } catch (error) {
@@ -231,12 +231,12 @@ const obtenerProgresoCurso = async (req, res) => {
 
   try {
     const user = await User.findById(id).populate(
-      "progresoCursos.clasesCompletadas"
+      "progresoCursos.clasesCompletadas",
     );
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
     const progreso = user.progresoCursos.find(
-      (p) => p.courseId.toString() === courseId
+      (p) => p.courseId.toString() === courseId,
     );
     res.json(progreso || { courseId, clasesCompletadas: [] });
   } catch (error) {
@@ -251,34 +251,39 @@ const comprarCurso = async (req, res) => {
 
   try {
     const user = await User.findById(id);
-    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+    if (!user) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
 
-    const yaComprado = user.cursosComprados.includes(courseId);
+    const yaComprado = user.cursosComprados.some(
+      (item) => item.courseId?.toString() === courseId,
+    );
+
     const yaAceptado = user.aceptacionTerminos.some(
-      (item) => item.itemId.toString() === courseId && item.tipo === "curso"
+      (item) => item.itemId?.toString() === courseId && item.tipo === "curso",
     );
 
     if (!yaComprado) {
-      user.cursosComprados.push(courseId);
+      const fechaExpiracion = new Date();
+      fechaExpiracion.setFullYear(fechaExpiracion.getFullYear() + 1);
+
+      user.cursosComprados.push({
+        courseId,
+        fechaExpiracion,
+      });
     }
 
     if (!yaAceptado) {
-      const tipoTraducido =
-        item.type === "course"
-          ? "curso"
-          : item.type === "formation"
-            ? "formacion"
-            : item.type;
-
       user.aceptacionTerminos.push({
-        tipo: tipoTraducido,
-        itemId: item.id,
+        tipo: "curso",
+        itemId: courseId,
         aceptado: true,
         fecha: new Date(),
       });
     }
 
     await user.save();
+
     res.json({
       message: "Curso agregado a cursos comprados",
       cursos: user.cursosComprados,

@@ -1,4 +1,5 @@
 // server.js
+// server.js
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -10,11 +11,11 @@ connectDB();
 const app = express();
 app.use(cors());
 
-// ⚠️ 1) Montar el webhook ANTES de express.json()
-const stripeWebhook = require("./routes/stripeWebhook"); // o "./routes/webhookRoutes", pero UNO solo
+// ✅ 1) Webhook de Stripe ANTES de express.json()
+const stripeWebhook = require("./routes/stripeWebhook");
 app.use("/api/stripe", stripeWebhook);
 
-// ✅ 2) Ahora sí, el parser JSON global
+// ✅ 2) Parser JSON global DESPUÉS
 app.use(express.json());
 
 // ✅ 3) Rutas normales
@@ -33,8 +34,8 @@ const cloudinaryRoutes = require("./routes/cloudinaryRoutes");
 const discountRoutes = require("./routes/discountRoutes");
 const physicalProductRoutes = require("./routes/physicalProductRoutes");
 const bookRoutes = require("./routes/bookRoutes");
-
-
+const personalizedServiceRoutes = require("./routes/personalizedServiceRoutes");
+const resetEditionRoutes = require("./routes/resetEditionRoutes");
 
 // ✅ 4) Mounts
 app.use("/api/auth", authRoutes);
@@ -47,13 +48,13 @@ app.use("/api/course-classes", courseClassRoutes);
 app.use("/api/presential-formations", presentialRoutes);
 app.use("/api/pagos", pagosRoutes);
 app.use("/api/upload", uploadRoutes);
-app.use("/api/stripe", stripeRoutes); // /crear-sesion, /confirmar-compra, etc.
+app.use("/api/stripe", stripeRoutes); // crear-sesion, confirmar-compra, etc.
 app.use("/api/cloudinary", cloudinaryRoutes);
 app.use("/api/discounts", discountRoutes);
 app.use("/api/physical-products", physicalProductRoutes);
 app.use("/api/books", bookRoutes);
-
-
+app.use("/api/personalized-services", personalizedServiceRoutes);
+app.use("/api/reset-editions", resetEditionRoutes);
 
 app.get("/", (req, res) => {
   res.send("🚀 API de CircusCoach funcionando correctamente");
